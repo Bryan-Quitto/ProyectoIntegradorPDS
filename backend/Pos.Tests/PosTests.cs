@@ -262,4 +262,56 @@ public class PosTests
             return subtotal * (_percentage / 100m);
         }
     }
+
+    // =========================================================================
+    // P11 y P12: Autenticación Desacoplada vía Caso de Uso (ARQ-01 / ARQ-02)
+    // =========================================================================
+    [Fact]
+    public async Task P11_LoginOperador_CredencialesValidas_GeneraTokenCorrectamente()
+    {
+        // Arrange
+        var operatorRepo = Substitute.For<IOperatorRepository>();
+        var jwtProvider = Substitute.For<IJwtProvider>();
+
+        operatorRepo.HashPassword("securePassword123").Returns("hash_123");
+        operatorRepo.GetActiveOperatorByCredentialsAsync("cashier1", "hash_123", Arg.Any<CancellationToken>())
+            .Returns(new OperatorDto(1, "cashier1", "Cajero Principal", "Cashier", true));
+
+        jwtProvider.GenerateToken("cashier1", "Cajero Principal", "Cashier")
+            .Returns("jwt.mock.token.xyz");
+
+        var useCase = new LoginOperatorUseCase(operatorRepo, jwtProvider);
+        var command = new LoginCommand("cashier1", "securePassword123");
+
+        // Act
+        var result = await useCase.ExecuteAsync(command);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Token.Should().Be("jwt.mock.token.xyz");
+        result.Username.Should().Be("cashier1");
+        result.Role.Should().Be("Cashier");
+    }
+
+    [Fact]
+    public async Task P12_LoginOperador_CredencialesInvalidas_RetornaNull()
+    {
+        // Arrange
+        var operatorRepo = Substitute.For<IOperatorRepository>();
+        var jwtProvider = Substitute.For<IJwtProvider>();
+
+        operatorRepo.HashPassword("wrongPass").Returns("hash_wrong");
+        operatorRepo.GetActiveOperatorByCredentialsAsync("cashier1", "hash_wrong", Arg.Any<CancellationToken>())
+            .Returns((OperatorDto?)null);
+
+        var useCase = new LoginOperatorUseCase(operatorRepo, jwtProvider);
+        var command = new LoginCommand("cashier1", "wrongPass");
+
+        // Act
+        var result = await useCase.ExecuteAsync(command);
+
+        // Assert
+        result.Should().BeNull();
+        jwtProvider.DidNotReceive().GenerateToken(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+    }
 }

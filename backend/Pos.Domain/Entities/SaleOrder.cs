@@ -28,6 +28,22 @@ public class SaleOrder
     public decimal NetSubTotal => Math.Max(0m, SubTotal - DiscountAmount);
     public decimal TaxAmount => decimal.Round(NetSubTotal * VatRateEcuador, 2, MidpointRounding.AwayFromZero);
     public decimal TotalAmount => NetSubTotal + TaxAmount;
+    public decimal VatRate => VatRateEcuador;
+
+    /// <summary>
+    /// Desglose canónico de montos e impuestos por línea según las reglas de negocio de Ecuador (15% IVA).
+    /// Evita duplicar la lógica fiscal en infraestructura o builders externos.
+    /// </summary>
+    public (decimal LineSubtotal, decimal LineDiscount, decimal NetSubtotal, decimal LineTotalWithTax) GetLineFiscalAmounts(SaleOrderLine line)
+    {
+        decimal totalLineSubtotals = SubTotal;
+        decimal discountRatio = totalLineSubtotals > 0 ? (DiscountAmount / totalLineSubtotals) : 0m;
+        decimal lineDiscount = decimal.Round(line.SubTotal.Amount * discountRatio, 2, MidpointRounding.AwayFromZero);
+        decimal netLineSubtotal = Math.Max(0m, line.SubTotal.Amount - lineDiscount);
+        decimal lineTax = decimal.Round(netLineSubtotal * VatRateEcuador, 2, MidpointRounding.AwayFromZero);
+        decimal lineTotalWithTax = netLineSubtotal + lineTax;
+        return (line.SubTotal.Amount, lineDiscount, netLineSubtotal, lineTotalWithTax);
+    }
 
     public SaleOrder(int posSessionId, string customerDocument = "9999999999999", string customerName = "Consumidor Final", IDiscountPolicy? discountPolicy = null)
     {

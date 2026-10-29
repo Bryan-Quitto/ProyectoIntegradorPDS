@@ -32,6 +32,18 @@ export class SearchCatalogUseCase {
   }
 }
 
+export class GetSalesHistoryUseCase {
+  private readonly _gateway: IPosApiGateway;
+
+  constructor(gateway: IPosApiGateway) {
+    this._gateway = gateway;
+  }
+
+  public async execute(): Promise<SaleOrderResult[]> {
+    return await this._gateway.getSalesHistory();
+  }
+}
+
 export interface CheckoutInput {
   cart: Cart;
   posSessionId: number;

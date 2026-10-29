@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
+using Pos.Application.Ports;
 
 namespace Pos.Infrastructure.Security;
 
@@ -15,12 +16,7 @@ public class JwtOptions
     public int ExpirationMinutes { get; set; } = 120;
 }
 
-public interface IJwtService
-{
-    string GenerateToken(string username, string fullName, string role);
-}
-
-public class JwtService : IJwtService
+public class JwtService : IJwtProvider
 {
     private readonly JwtOptions _options;
 

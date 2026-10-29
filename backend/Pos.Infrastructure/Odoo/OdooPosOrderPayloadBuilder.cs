@@ -38,7 +38,14 @@ public class OdooPosOrderPayloadBuilder
         return this;
     }
 
-    public OdooPosOrderPayloadBuilder AddLine(int productId, string productName, int quantity, decimal unitPrice, decimal discount = 0m)
+    public OdooPosOrderPayloadBuilder AddLine(
+        int productId,
+        string productName,
+        int quantity,
+        decimal unitPrice,
+        decimal discount,
+        decimal priceSubtotal,
+        decimal priceSubtotalIncl)
     {
         var lineDict = new Dictionary<string, object>
         {
@@ -46,8 +53,8 @@ public class OdooPosOrderPayloadBuilder
             ["qty"] = quantity,
             ["price_unit"] = unitPrice,
             ["discount"] = discount,
-            ["price_subtotal"] = (unitPrice * quantity) - discount,
-            ["price_subtotal_incl"] = decimal.Round(((unitPrice * quantity) - discount) * 1.15m, 2, MidpointRounding.AwayFromZero)
+            ["price_subtotal"] = priceSubtotal,
+            ["price_subtotal_incl"] = priceSubtotalIncl
         };
         _lines.Add(lineDict);
         return this;
@@ -60,14 +67,19 @@ public class OdooPosOrderPayloadBuilder
             .WithPosReference($"Order {order.Id.ToString()[..8]}")
             .WithTotals(order.TaxAmount, order.TotalAmount);
 
-        // Distribute discount proportionally across lines if any
-        decimal totalLineSubtotals = order.SubTotal;
-        decimal discountRatio = totalLineSubtotals > 0 ? (order.DiscountAmount / totalLineSubtotals) : 0m;
-
+        // Mapea los cálculos fiscales determinados exclusivamente por el Dominio
         foreach (var line in order.Lines)
         {
-            decimal lineDiscount = decimal.Round(line.SubTotal.Amount * discountRatio, 2, MidpointRounding.AwayFromZero);
-            AddLine(line.ProductId, line.ProductName, line.Quantity.Value, line.UnitPrice.Amount, lineDiscount);
+            var (subtotal, discount, netSubtotal, totalWithTax) = order.GetLineFiscalAmounts(line);
+            AddLine(
+                line.ProductId,
+                line.ProductName,
+                line.Quantity.Value,
+                line.UnitPrice.Amount,
+                discount,
+                netSubtotal,
+                totalWithTax
+            );
         }
 
         return this;

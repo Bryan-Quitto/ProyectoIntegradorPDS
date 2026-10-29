@@ -1,15 +1,12 @@
 using System.Text;
 using DotNetEnv;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Pos.Api.Extensions;
 using Pos.Api.Middleware;
 using Pos.Application.DTOs;
 using Pos.Application.UseCases;
 using Pos.Infrastructure;
-using Pos.Infrastructure.Persistence;
-using Pos.Infrastructure.Security;
 
 // 1. Cargar Variables de Entorno desde .env (RNF-09)
 var envPath = Path.Combine(Directory.GetCurrentDirectory(), ".env");
@@ -74,12 +71,8 @@ builder.Services.AddSwaggerGenBearer();
 
 var app = builder.Build();
 
-// Asegurar creación de Base de Datos SQLite y Seed inicial en arranque
-using (var scope = app.Services.CreateScope())
-{
-    var dbContext = scope.ServiceProvider.GetRequiredService<PosDbContext>();
-    dbContext.Database.EnsureCreated();
-}
+// Inicialización de la persistencia local SQLite (Audit & Idempotency)
+app.Services.InitializePosDatabase();
 
 // Middleware Pipeline
 app.UseMiddleware<ExceptionHandlingMiddleware>();
@@ -97,35 +90,15 @@ app.UseCors("AllowViteApp");
 app.UseAuthentication();
 app.UseAuthorization();
 
-// ==========================================
-// ENDPOINTS DE LA API (Minimal APIs Delgadas)
-// ==========================================
+// ==============================================================
+// ENDPOINTS DE LA API (Minimal APIs delgadas - Orquestación Pura)
+// ==============================================================
 
-// Autenticación de Operadores Locales
-app.MapPost("/api/auth/login", async (LoginRequest request, PosDbContext db, IJwtService jwtService) =>
+// Autenticación de Operadores Locales (100% Desacoplado vía Use Case)
+app.MapPost("/api/auth/login", async (LoginCommand command, LoginOperatorUseCase useCase, CancellationToken ct) =>
 {
-    if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
-    {
-        return Results.BadRequest(new { error = "El usuario y contraseña son requeridos." });
-    }
-
-    var hash = PosDbContext.HashPassword(request.Password);
-    var user = await db.LocalOperators
-        .FirstOrDefaultAsync(u => u.Username == request.Username && u.PasswordHash == hash && u.IsActive);
-
-    if (user == null)
-    {
-        return Results.Unauthorized();
-    }
-
-    var token = jwtService.GenerateToken(user.Username, user.FullName, user.Role);
-    return Results.Ok(new
-    {
-        token,
-        username = user.Username,
-        fullName = user.FullName,
-        role = user.Role
-    });
+    var result = await useCase.ExecuteAsync(command, ct);
+    return result != null ? Results.Ok(result) : Results.Unauthorized();
 }).AllowAnonymous();
 
 // Búsqueda de Productos en Odoo
@@ -189,5 +162,3 @@ app.MapGet("/health", () => Results.Ok(new
 }));
 
 app.Run();
-
-public record LoginRequest(string Username, string Password);

@@ -71,9 +71,11 @@ public static class DependencyInjection
 
         services.AddScoped<IIdempotencyStore, SqliteIdempotencyStore>();
         services.AddScoped<ISaleHistoryRepository, SqliteSaleHistoryRepository>();
-        services.AddSingleton<IJwtService, JwtService>();
+        services.AddScoped<IOperatorRepository, SqliteOperatorRepository>();
+        services.AddSingleton<IJwtProvider, JwtService>();
 
         // 5. Application Use Cases
+        services.AddScoped<LoginOperatorUseCase>();
         services.AddScoped<SearchProductsUseCase>();
         services.AddScoped<GetActiveSessionUseCase>();
         services.AddScoped<CreateSaleUseCase>();

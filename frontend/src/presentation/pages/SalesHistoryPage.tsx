@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { SaleOrderResult } from '@/application/ports/IPosApiGateway';
-import { PosApiHttpAdapter } from '@/infrastructure/http/PosApiHttpAdapter';
+import React from 'react';
+import { useSalesHistory } from '../hooks/useSalesHistory';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
@@ -12,31 +11,7 @@ interface SalesHistoryPageProps {
 }
 
 export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerminal }) => {
-  const [sales, setSales] = useState<SaleOrderResult[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadHistory = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const adapter = new PosApiHttpAdapter();
-      const data = await adapter.getSalesHistory();
-      setSales(data);
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Error al cargar historial.');
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadHistory();
-  }, []);
+  const { sales, loading, error, refresh } = useSalesHistory();
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -49,7 +24,7 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
           <h1 className="text-sm font-bold text-slate-800">Historial de Ventas Sincronizadas</h1>
         </div>
 
-        <Button variant="outline" size="sm" onClick={loadHistory} className="h-8 gap-1.5">
+        <Button variant="outline" size="sm" onClick={() => refresh()} className="h-8 gap-1.5">
           <RefreshCw className="h-3.5 w-3.5" />
           Actualizar
         </Button>
