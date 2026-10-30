@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Product } from '@/domain/Product';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
+import { Pagination } from '../ui/Pagination';
 import { Search, Plus, Package, Filter, X } from 'lucide-react';
 
 export type ProductFilterType = 'ALL' | 'NAME' | 'CODE';
@@ -23,6 +24,13 @@ export const ProductCatalogPanel: React.FC<ProductCatalogPanelProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<ProductFilterType>('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 6; // 6 productos por página para cuadrícula responsiva (2x3)
+
+  // Reset de página al cambiar término de búsqueda o categoría de filtro
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterType]);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -63,6 +71,13 @@ export const ProductCatalogPanel: React.FC<ProductCatalogPanelProps> = ({
       return matchName || matchCode;
     });
   }, [products, searchTerm, filterType]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / PAGE_SIZE));
+
+  const pagedProducts = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredProducts.slice(start, start + PAGE_SIZE);
+  }, [filteredProducts, currentPage, PAGE_SIZE]);
 
   return (
     <Card className="flex flex-col h-full shadow-sm border-slate-200">
@@ -182,7 +197,7 @@ export const ProductCatalogPanel: React.FC<ProductCatalogPanelProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {filteredProducts.map((product) => (
+            {pagedProducts.map((product) => (
               <div
                 key={product.id}
                 onClick={() => onAddToCart(product)}
@@ -227,6 +242,18 @@ export const ProductCatalogPanel: React.FC<ProductCatalogPanelProps> = ({
           </div>
         )}
       </CardContent>
+
+      {/* Controles de Paginación de Productos */}
+      {filteredProducts.length > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalCount={filteredProducts.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setCurrentPage}
+          className="border-t border-slate-200 bg-slate-50/70 rounded-b-xl"
+        />
+      )}
     </Card>
   );
 };

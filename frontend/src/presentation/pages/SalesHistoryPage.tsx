@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useSalesHistory } from '../hooks/useSalesHistory';
 import { useSaleDetail } from '../hooks/useSaleDetail';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
@@ -6,6 +6,7 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '../components/ui/Table';
+import { Pagination } from '../components/ui/Pagination';
 import { SaleDetailModal } from '../components/pos/SaleDetailModal';
 import { formatEcDateTime } from '../utils/dateUtils';
 import {
@@ -39,6 +40,13 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<SaleHistoryFilterType>('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 5; // 5 órdenes por página en el historial
+
+  // Reset de página al cambiar término de búsqueda o tipo de filtro
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterType]);
 
   // Filtrado reactivo en memoria:
   // - Referencia Odoo: 'contains' sobre odooOrderReference (ej: '260-1-000004', '0004', '4').
@@ -76,6 +84,13 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
       return matchReference || matchCustomer;
     });
   }, [sales, searchTerm, filterType]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredSales.length / PAGE_SIZE));
+
+  const pagedSales = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredSales.slice(start, start + PAGE_SIZE);
+  }, [filteredSales, currentPage, PAGE_SIZE]);
 
   // Localización estricta de estados de venta (Español Estricto)
   const getSaleStateBadge = (state: string) => {
@@ -293,7 +308,7 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredSales.map((sale) => {
+                  {pagedSales.map((sale) => {
                     const statusBadge = getSaleStateBadge(sale.state);
 
                     return (
@@ -352,6 +367,18 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
                   })}
                 </TableBody>
               </Table>
+            )}
+
+            {/* Controles de Paginación del Historial */}
+            {!loading && !error && filteredSales.length > 0 && (
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalCount={filteredSales.length}
+                pageSize={PAGE_SIZE}
+                onPageChange={setCurrentPage}
+                className="border-t border-slate-200 bg-slate-50/50"
+              />
             )}
           </CardContent>
         </Card>
