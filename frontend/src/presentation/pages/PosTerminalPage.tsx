@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { usePosCart } from '../hooks/usePosCart';
 import { useProducts } from '../hooks/useProducts';
 import { useCheckout } from '../hooks/useCheckout';
@@ -10,10 +11,19 @@ import { Button } from '../components/ui/Button';
 import { Store, History, RefreshCw, AlertCircle } from 'lucide-react';
 
 interface PosTerminalPageProps {
-  onNavigateHistory: () => void;
+  onNavigateHistory?: () => void;
 }
 
 export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHistory }) => {
+  const navigate = useNavigate();
+
+  const handleNavigateHistory = () => {
+    if (onNavigateHistory) {
+      onNavigateHistory();
+    } else {
+      navigate('/historial');
+    }
+  };
   const {
     rawCart,
     items,
@@ -83,7 +93,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
             Actualizar
           </Button>
 
-          <Button variant="default" size="sm" onClick={onNavigateHistory} className="h-8 gap-1.5 bg-slate-800 hover:bg-slate-900 text-white">
+          <Button variant="default" size="sm" onClick={handleNavigateHistory} className="h-8 gap-1.5 bg-slate-800 hover:bg-slate-900 text-white">
             <History className="h-3.5 w-3.5" />
             Historial de Ventas
           </Button>

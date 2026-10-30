@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Product } from '@/domain/Product';
 import { Card, CardHeader, CardTitle, CardContent } from '../ui/Card';
 import { Input } from '../ui/Input';
@@ -22,10 +23,34 @@ export const ProductCatalogPanel: React.FC<ProductCatalogPanelProps> = ({
   loading,
   onSearch,
 }) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<ProductFilterType>('ALL');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Lectura inicial de parámetros URL (filtros de catálogo compartibles y persistentes)
+  const querySearch = searchParams.get('buscar') || searchParams.get('q') || '';
+  const rawFilter = (searchParams.get('filtro') || searchParams.get('filter') || 'ALL').toUpperCase();
+  const queryFilter: ProductFilterType =
+    rawFilter === 'NAME' || rawFilter === 'CODE' ? rawFilter : 'ALL';
+  const queryPage = Math.max(1, parseInt(searchParams.get('pagina') || searchParams.get('page') || '1', 10) || 1);
+
+  const [searchTerm, setSearchTerm] = useState(querySearch);
+  const [filterType, setFilterType] = useState<ProductFilterType>(queryFilter);
+  const [currentPage, setCurrentPage] = useState(queryPage);
   const PAGE_SIZE = 6; // 6 productos por página para cuadrícula responsiva (2x3)
+
+  // Sincronizar estado local hacia los SearchParams de la URL
+  useEffect(() => {
+    const params: Record<string, string> = {};
+    if (searchTerm.trim()) {
+      params.buscar = searchTerm.trim();
+    }
+    if (filterType !== 'ALL') {
+      params.filtro = filterType;
+    }
+    if (currentPage > 1) {
+      params.pagina = String(currentPage);
+    }
+    setSearchParams(params, { replace: true });
+  }, [searchTerm, filterType, currentPage, setSearchParams]);
 
   // Reset de página al cambiar término de búsqueda o categoría de filtro
   useEffect(() => {

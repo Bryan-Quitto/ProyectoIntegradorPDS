@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useSalesHistory } from '../hooks/useSalesHistory';
 import { useSaleDetail } from '../hooks/useSaleDetail';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
@@ -25,10 +26,21 @@ import {
 export type SaleHistoryFilterType = 'ALL' | 'REFERENCE' | 'CUSTOMER';
 
 interface SalesHistoryPageProps {
-  onBackToTerminal: () => void;
+  onBackToTerminal?: () => void;
 }
 
 export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerminal }) => {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const handleBack = () => {
+    if (onBackToTerminal) {
+      onBackToTerminal();
+    } else {
+      navigate('/');
+    }
+  };
+
   const { sales, loading, error, refresh } = useSalesHistory();
   const {
     sale: selectedSale,
@@ -38,10 +50,32 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
     closeSaleDetail,
   } = useSaleDetail();
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<SaleHistoryFilterType>('ALL');
-  const [currentPage, setCurrentPage] = useState(1);
+  // Lectura inicial de parámetros URL (filtros persistentes y compartibles)
+  const querySearch = searchParams.get('buscar') || searchParams.get('q') || '';
+  const rawFilter = (searchParams.get('filtro') || searchParams.get('filter') || 'ALL').toUpperCase();
+  const queryFilter: SaleHistoryFilterType =
+    rawFilter === 'REFERENCE' || rawFilter === 'CUSTOMER' ? rawFilter : 'ALL';
+  const queryPage = Math.max(1, parseInt(searchParams.get('pagina') || searchParams.get('page') || '1', 10) || 1);
+
+  const [searchTerm, setSearchTerm] = useState(querySearch);
+  const [filterType, setFilterType] = useState<SaleHistoryFilterType>(queryFilter);
+  const [currentPage, setCurrentPage] = useState(queryPage);
   const PAGE_SIZE = 5; // 5 órdenes por página en el historial
+
+  // Sincronizar estado local hacia los parámetros de la URL
+  useEffect(() => {
+    const params: Record<string, string> = {};
+    if (searchTerm.trim()) {
+      params.buscar = searchTerm.trim();
+    }
+    if (filterType !== 'ALL') {
+      params.filtro = filterType;
+    }
+    if (currentPage > 1) {
+      params.pagina = String(currentPage);
+    }
+    setSearchParams(params, { replace: true });
+  }, [searchTerm, filterType, currentPage, setSearchParams]);
 
   // Reset de página al cambiar término de búsqueda o tipo de filtro
   useEffect(() => {
@@ -136,7 +170,7 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
       {/* Barra superior de navegación */}
       <header className="h-14 bg-white border-b border-slate-200 px-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={onBackToTerminal} className="h-8 gap-1.5">
+          <Button variant="ghost" size="sm" onClick={handleBack} className="h-8 gap-1.5" title="Volver al Terminal POS">
             <ArrowLeft className="h-4 w-4" />
             Volver al Terminal
           </Button>
