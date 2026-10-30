@@ -14,12 +14,17 @@ public class SaleAuditRecord
     public int Id { get; set; }
     public Guid OrderId { get; set; }
     public int PosSessionId { get; set; }
+    public string SessionName { get; set; } = string.Empty;
+    public string OperatorName { get; set; } = "Cajero POS";
     public string CustomerDocument { get; set; } = string.Empty;
     public string CustomerName { get; set; } = string.Empty;
     public decimal SubTotal { get; set; }
     public decimal DiscountAmount { get; set; }
+    public string DiscountPolicyName { get; set; } = "Sin Descuento";
     public decimal TaxAmount { get; set; }
     public decimal TotalAmount { get; set; }
+    public string PaymentMethod { get; set; } = "Efectivo";
+    public decimal AmountPaid { get; set; }
     public string State { get; set; } = string.Empty;
     public string? OdooOrderReference { get; set; }
     public int? OdooOrderId { get; set; }

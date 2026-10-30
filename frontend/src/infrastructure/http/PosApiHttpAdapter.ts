@@ -4,6 +4,7 @@ import {
   PosSession,
   CreateSaleRequest,
   SaleOrderResult,
+  SaleOrderDetailDto,
   PosApiError,
 } from '@/application/ports/IPosApiGateway';
 
@@ -63,7 +64,15 @@ export class PosApiHttpAdapter implements IPosApiGateway {
       },
     });
 
-    return await this.handleResponse<Product[]>(response);
+    const raw = await this.handleResponse<any[]>(response);
+    return raw.map((p) => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      barcode: p.barcode ?? '',
+      availableQuantity: p.availableQuantity ?? 0,
+      defaultCode: p.defaultCode || p.default_code || '',
+    }));
   }
 
   public async getActiveSession(): Promise<PosSession | null> {
@@ -116,7 +125,7 @@ export class PosApiHttpAdapter implements IPosApiGateway {
     return await this.handleResponse<SaleOrderResult[]>(response);
   }
 
-  public async getSaleById(id: string): Promise<SaleOrderResult | null> {
+  public async getSaleById(id: string): Promise<SaleOrderDetailDto | null> {
     const response = await fetch(`${this._baseUrl}/api/sales/${id}`, {
       method: 'GET',
       headers: {
@@ -129,6 +138,6 @@ export class PosApiHttpAdapter implements IPosApiGateway {
       return null;
     }
 
-    return await this.handleResponse<SaleOrderResult>(response);
+    return await this.handleResponse<SaleOrderDetailDto>(response);
   }
 }

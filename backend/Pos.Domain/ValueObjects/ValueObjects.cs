@@ -27,12 +27,16 @@ public readonly record struct Money
 
 public readonly record struct Quantity
 {
+    public const int MaxQuantity = 1000;
     public int Value { get; }
 
     public Quantity(int value)
     {
         if (value <= 0)
             throw new DomainValidationException(nameof(Quantity), "La cantidad de productos debe ser estrictamente mayor a 0 (RN-02).");
+
+        if (value > MaxQuantity)
+            throw new DomainValidationException(nameof(Quantity), $"La cantidad de productos no puede superar {MaxQuantity} unidades por ítem.");
 
         Value = value;
     }

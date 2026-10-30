@@ -3,6 +3,7 @@ import { Product } from '@/domain/Product';
 import { DiscountType } from '@/domain/CartItem';
 import { validateEcuadorianId } from '@/domain/ecuadorianIdValidator';
 import { IPosApiGateway, CreateSaleRequest, SaleOrderResult, PosApiError, PosSession } from '../ports/IPosApiGateway';
+export { GetSaleDetailUseCase } from './GetSaleDetailUseCase';
 
 export class ManageCartUseCase {
   public addItem(cart: Cart, product: Product, quantity = 1): void {

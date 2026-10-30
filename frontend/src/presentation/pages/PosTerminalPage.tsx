@@ -80,7 +80,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
 
           <Button variant="outline" size="sm" onClick={() => refresh()} className="h-8 gap-1.5">
             <RefreshCw className="h-3.5 w-3.5" />
-            Recargar
+            Actualizar
           </Button>
 
           <Button variant="default" size="sm" onClick={onNavigateHistory} className="h-8 gap-1.5 bg-slate-800 hover:bg-slate-900 text-white">

@@ -5,6 +5,7 @@ import {
   SearchCatalogUseCase,
   GetActiveSessionUseCase,
   ManageCartUseCase,
+  GetSaleDetailUseCase,
 } from '@/application/useCases/UseCases';
 
 // ============================================================================
@@ -24,5 +25,6 @@ export const apiAdapter = new PosApiHttpAdapter();
 export const searchCatalogUseCase = new SearchCatalogUseCase(apiAdapter);
 export const getActiveSessionUseCase = new GetActiveSessionUseCase(apiAdapter);
 export const getSalesHistoryUseCase = new GetSalesHistoryUseCase(apiAdapter);
+export const getSaleDetailUseCase = new GetSaleDetailUseCase(apiAdapter);
 export const checkoutSaleUseCase = new CheckoutSaleUseCase(apiAdapter);
 export const manageCartUseCase = new ManageCartUseCase();

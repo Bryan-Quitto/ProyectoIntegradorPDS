@@ -4,6 +4,8 @@ import { Product } from './Product';
 export class Cart {
   private readonly _items: Map<number, CartItem> = new Map();
   private _discountPolicy: DiscountPolicyConfig = { type: 'NONE', value: 0 };
+  public static readonly MAX_QUANTITY = 1000;
+  public static readonly MIN_QUANTITY = 1;
   private static readonly VAT_RATE = 0.15; // IVA Ecuador 15%
 
   public get items(): CartItem[] {
@@ -15,32 +17,37 @@ export class Cart {
   }
 
   public addItem(product: Product, quantity = 1): void {
-    if (quantity <= 0) {
+    if (quantity < Cart.MIN_QUANTITY) {
       throw new Error('La cantidad de producto debe ser mayor a 0 (RN-02).');
     }
 
     const existing = this._items.get(product.id);
     if (existing) {
-      const newQty = existing.quantity + quantity;
+      const newQty = Math.min(Cart.MAX_QUANTITY, existing.quantity + quantity);
       this._items.set(product.id, {
         ...existing,
         quantity: newQty,
         subtotal: Number((existing.unitPrice * newQty).toFixed(2)),
       });
     } else {
+      const initialQty = Math.min(Cart.MAX_QUANTITY, quantity);
       this._items.set(product.id, {
         productId: product.id,
         productName: product.name,
         unitPrice: product.price,
-        quantity: quantity,
-        subtotal: Number((product.price * quantity).toFixed(2)),
+        quantity: initialQty,
+        subtotal: Number((product.price * initialQty).toFixed(2)),
+        productCode: product.defaultCode || '',
       });
     }
   }
 
   public updateQuantity(productId: number, quantity: number): void {
-    if (quantity <= 0) {
+    if (quantity < Cart.MIN_QUANTITY) {
       throw new Error('La cantidad debe ser mayor a 0 (RN-02).');
+    }
+    if (quantity > Cart.MAX_QUANTITY) {
+      throw new Error(`La cantidad no puede superar las ${Cart.MAX_QUANTITY} unidades (límite de seguridad POS).`);
     }
 
     const existing = this._items.get(productId);

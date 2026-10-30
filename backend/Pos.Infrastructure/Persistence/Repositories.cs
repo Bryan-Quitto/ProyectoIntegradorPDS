@@ -74,12 +74,17 @@ public class SqliteSaleHistoryRepository : ISaleHistoryRepository
             {
                 OrderId = sale.OrderId,
                 PosSessionId = sale.PosSessionId,
+                SessionName = sale.SessionName,
+                OperatorName = sale.OperatorName,
                 CustomerDocument = sale.CustomerDocument,
                 CustomerName = sale.CustomerName,
                 SubTotal = sale.SubTotal,
                 DiscountAmount = sale.DiscountAmount,
+                DiscountPolicyName = sale.DiscountPolicyName,
                 TaxAmount = sale.TaxAmount,
                 TotalAmount = sale.TotalAmount,
+                PaymentMethod = sale.PaymentMethod,
+                AmountPaid = sale.AmountPaid > 0 ? sale.AmountPaid : sale.TotalAmount,
                 State = sale.State,
                 OdooOrderReference = sale.OdooOrderReference,
                 OdooOrderId = sale.OdooOrderId,
@@ -92,6 +97,11 @@ public class SqliteSaleHistoryRepository : ISaleHistoryRepository
             existing.State = sale.State;
             existing.OdooOrderReference = sale.OdooOrderReference;
             existing.OdooOrderId = sale.OdooOrderId;
+            existing.DiscountPolicyName = sale.DiscountPolicyName;
+            existing.PaymentMethod = sale.PaymentMethod;
+            existing.AmountPaid = sale.AmountPaid > 0 ? sale.AmountPaid : sale.TotalAmount;
+            existing.SessionName = string.IsNullOrWhiteSpace(existing.SessionName) ? sale.SessionName : existing.SessionName;
+            existing.OperatorName = string.IsNullOrWhiteSpace(existing.OperatorName) ? sale.OperatorName : existing.OperatorName;
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -118,7 +128,22 @@ public class SqliteSaleHistoryRepository : ISaleHistoryRepository
 
     private static SaleOrderResponseDto MapToDto(SaleAuditRecord record)
     {
-        var lines = JsonSerializer.Deserialize<List<SaleOrderLineDto>>(record.OrderLinesJson) ?? new();
+        var rawLines = JsonSerializer.Deserialize<List<SaleOrderLineDto>>(record.OrderLinesJson) ?? new();
+
+        var lines = rawLines.Select(l =>
+        {
+            var taxRate = l.TaxRate > 0 ? l.TaxRate : 0.15m;
+            var netSubTotal = l.NetSubTotal > 0 ? l.NetSubTotal : (l.SubTotal > 0 ? decimal.Round(l.SubTotal / (1m + taxRate), 2, MidpointRounding.AwayFromZero) : 0m);
+            var taxAmount = l.TaxAmount > 0 ? l.TaxAmount : (l.SubTotal - netSubTotal);
+            var totalWithTax = l.TotalWithTax > 0 ? l.TotalWithTax : l.SubTotal;
+            return l with
+            {
+                TaxRate = taxRate,
+                NetSubTotal = netSubTotal,
+                TaxAmount = taxAmount,
+                TotalWithTax = totalWithTax
+            };
+        }).ToList();
 
         return new SaleOrderResponseDto(
             record.OrderId,
@@ -132,8 +157,13 @@ public class SqliteSaleHistoryRepository : ISaleHistoryRepository
             record.State,
             record.OdooOrderReference,
             record.OdooOrderId,
-            record.SyncedAtUtc,
-            lines
+            DateTime.SpecifyKind(record.SyncedAtUtc, DateTimeKind.Utc),
+            lines,
+            DiscountPolicyName: string.IsNullOrWhiteSpace(record.DiscountPolicyName) ? "Sin Descuento" : record.DiscountPolicyName,
+            PaymentMethod: string.IsNullOrWhiteSpace(record.PaymentMethod) ? "Efectivo" : record.PaymentMethod,
+            AmountPaid: record.AmountPaid > 0 ? record.AmountPaid : record.TotalAmount,
+            SessionName: string.IsNullOrWhiteSpace(record.SessionName) ? $"Sesión #{record.PosSessionId}" : record.SessionName,
+            OperatorName: string.IsNullOrWhiteSpace(record.OperatorName) ? "Cajero POS" : record.OperatorName
         );
     }
 }

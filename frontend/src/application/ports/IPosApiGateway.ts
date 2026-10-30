@@ -18,27 +18,41 @@ export interface CreateSaleRequest {
   items: { productId: number; quantity: number }[];
 }
 
-export interface SaleOrderResult {
+export interface SaleOrderLineDetail {
+  productId: number;
+  productName: string;
+  productCode?: string;
+  quantity: number;
+  unitPrice: number;
+  subTotal: number;
+  taxRate?: number;
+  netSubTotal?: number;
+  taxAmount?: number;
+  totalWithTax?: number;
+}
+
+export interface SaleOrderDetailDto {
   orderId: string;
   posSessionId: number;
+  sessionName?: string;
+  operatorName?: string;
   customerDocument: string;
   customerName: string;
   subTotal: number;
   discountAmount: number;
+  discountPolicyName?: string;
   taxAmount: number;
   totalAmount: number;
+  paymentMethod?: string;
+  amountPaid?: number;
   state: string;
   odooOrderReference?: string;
   odooOrderId?: number;
   createdAtUtc: string;
-  lines: {
-    productId: number;
-    productName: string;
-    quantity: number;
-    unitPrice: number;
-    subTotal: number;
-  }[];
+  lines: SaleOrderLineDetail[];
 }
+
+export type SaleOrderResult = SaleOrderDetailDto;
 
 export class PosApiError extends Error {
   public readonly status: number;
@@ -59,5 +73,5 @@ export interface IPosApiGateway {
   getActiveSession(): Promise<PosSession | null>;
   createSale(request: CreateSaleRequest): Promise<SaleOrderResult>;
   getSalesHistory(): Promise<SaleOrderResult[]>;
-  getSaleById(id: string): Promise<SaleOrderResult | null>;
+  getSaleById(id: string): Promise<SaleOrderDetailDto | null>;
 }

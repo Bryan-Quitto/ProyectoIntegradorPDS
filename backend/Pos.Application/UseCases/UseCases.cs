@@ -153,12 +153,27 @@ public class CreateSaleUseCase
             order.OdooOrderReference,
             order.OdooOrderId,
             order.CreatedAtUtc,
-            order.Lines.Select(l => new SaleOrderLineDto(
-                l.ProductId,
-                l.ProductName,
-                l.Quantity.Value,
-                l.UnitPrice.Amount,
-                l.SubTotal.Amount)).ToList()
+            order.Lines.Select(l =>
+            {
+                var fiscal = order.GetLineFiscalAmounts(l);
+                var prodInfo = productDict.TryGetValue(l.ProductId, out var p) ? p : null;
+                return new SaleOrderLineDto(
+                    l.ProductId,
+                    l.ProductName,
+                    l.Quantity.Value,
+                    l.UnitPrice.Amount,
+                    l.SubTotal.Amount,
+                    ProductCode: prodInfo?.DefaultCode ?? "",
+                    TaxRate: l.Tax.Rate,
+                    NetSubTotal: fiscal.TaxBase,
+                    TaxAmount: fiscal.TaxAmount,
+                    TotalWithTax: fiscal.TotalWithTax);
+            }).ToList(),
+            DiscountPolicyName: order.DiscountPolicy.PolicyName,
+            PaymentMethod: "Efectivo",
+            AmountPaid: order.TotalAmount,
+            SessionName: activeSession?.Name ?? $"Sesión #{order.PosSessionId}",
+            OperatorName: "Cajero POS"
         );
 
         // 10. Persistencia local para trazabilidad e idempotencia
@@ -218,5 +233,14 @@ public class GetSaleByIdUseCase
     public async Task<SaleOrderResponseDto?> ExecuteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         return await _historyRepository.GetSaleByIdAsync(id, cancellationToken);
+    }
+
+    public async Task<SaleOrderResponseDto?> ExecuteAsync(string idString, CancellationToken cancellationToken = default)
+    {
+        if (Guid.TryParse(idString, out var guidId))
+        {
+            return await _historyRepository.GetSaleByIdAsync(guidId, cancellationToken);
+        }
+        return null;
     }
 }

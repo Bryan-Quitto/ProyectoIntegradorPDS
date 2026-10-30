@@ -391,4 +391,58 @@ public class PosTests
         await idempotencyStore.Received(1).SaveKeyAsync(idempotencyKey, result.OrderId, Arg.Any<string>(), Arg.Any<CancellationToken>());
         await historyRepo.Received(1).SaveSaleAsync(Arg.Is<SaleOrderResponseDto>(s => s.OrderId == result.OrderId), Arg.Any<CancellationToken>());
     }
+
+    // =========================================================================
+    // P14: Consulta de Venta por ID con Detalle Completo (RF-14)
+    // =========================================================================
+    [Fact]
+    public async Task P14_GetSaleById_ExistingOrder_ReturnsFullDetailDto()
+    {
+        // Arrange
+        var historyRepo = Substitute.For<ISaleHistoryRepository>();
+        var orderId = Guid.NewGuid();
+
+        var detailDto = new SaleOrderResponseDto(
+            OrderId: orderId,
+            PosSessionId: 4,
+            CustomerDocument: "1712345678",
+            CustomerName: "Juan Perez",
+            SubTotal: 35.00m,
+            DiscountAmount: 3.50m,
+            TaxAmount: 4.11m,
+            TotalAmount: 31.50m,
+            State: "Synced",
+            OdooOrderReference: "260-1-000003",
+            OdooOrderId: 5,
+            CreatedAtUtc: DateTime.UtcNow,
+            Lines: new List<SaleOrderLineDto>
+            {
+                new(3, "Producto A", 1, 15.00m, 15.00m, ProductCode: "PROD-001", TaxRate: 0.15m, NetSubTotal: 11.74m, TaxAmount: 1.76m, TotalWithTax: 13.50m),
+                new(4, "Producto B", 1, 20.00m, 20.00m, ProductCode: "PROD-002", TaxRate: 0.15m, NetSubTotal: 15.65m, TaxAmount: 2.35m, TotalWithTax: 18.00m)
+            },
+            DiscountPolicyName: "Descuento Porcentual (10%)",
+            PaymentMethod: "Efectivo",
+            AmountPaid: 31.50m,
+            SessionName: "My Company/00002",
+            OperatorName: "Cajero POS"
+        );
+
+        historyRepo.GetSaleByIdAsync(orderId, Arg.Any<CancellationToken>())
+            .Returns(detailDto);
+
+        var useCase = new GetSaleByIdUseCase(historyRepo);
+
+        // Act
+        var result = await useCase.ExecuteAsync(orderId.ToString());
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.OrderId.Should().Be(orderId);
+        result.OdooOrderReference.Should().Be("260-1-000003");
+        result.DiscountPolicyName.Should().Be("Descuento Porcentual (10%)");
+        result.PaymentMethod.Should().Be("Efectivo");
+        result.Lines.Should().HaveCount(2);
+        result.Lines[0].ProductCode.Should().Be("PROD-001");
+        result.Lines[1].ProductCode.Should().Be("PROD-002");
+    }
 }

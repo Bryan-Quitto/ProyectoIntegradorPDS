@@ -45,7 +45,12 @@ public record SaleOrderLineDto(
     string ProductName,
     int Quantity,
     decimal UnitPrice,
-    decimal SubTotal
+    decimal SubTotal,
+    string ProductCode = "",
+    decimal TaxRate = 0.15m,
+    decimal NetSubTotal = 0m,
+    decimal TaxAmount = 0m,
+    decimal TotalWithTax = 0m
 );
 
 public record SaleOrderResponseDto(
@@ -61,7 +66,12 @@ public record SaleOrderResponseDto(
     string? OdooOrderReference,
     int? OdooOrderId,
     DateTime CreatedAtUtc,
-    List<SaleOrderLineDto> Lines
+    List<SaleOrderLineDto> Lines,
+    string DiscountPolicyName = "Sin Descuento",
+    string PaymentMethod = "Efectivo",
+    decimal AmountPaid = 0m,
+    string SessionName = "",
+    string OperatorName = "Cajero POS"
 );
 
 public record OdooSyncResultDto(

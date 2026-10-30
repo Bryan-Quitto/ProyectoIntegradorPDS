@@ -159,11 +159,11 @@ app.MapGet("/api/sales", async (GetSalesHistoryUseCase useCase, CancellationToke
     return Results.Ok(sales);
 }).AllowAnonymous();
 
-// Consulta de Venta por ID
-app.MapGet("/api/sales/{id:guid}", async (Guid id, GetSaleByIdUseCase useCase, CancellationToken ct) =>
+// Consulta de Venta por ID (RF-14)
+app.MapGet("/api/sales/{id}", async (string id, GetSaleByIdUseCase useCase, CancellationToken ct) =>
 {
     var sale = await useCase.ExecuteAsync(id, ct);
-    return sale != null ? Results.Ok(sale) : Results.NotFound();
+    return sale != null ? Results.Ok(sale) : Results.NotFound(new { message = $"No se encontró la venta con identificador '{id}'." });
 }).AllowAnonymous();
 
 // Health Check

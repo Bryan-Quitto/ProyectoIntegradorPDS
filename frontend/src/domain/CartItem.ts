@@ -4,6 +4,7 @@ export interface CartItem {
   unitPrice: number;
   quantity: number;
   subtotal: number;
+  productCode?: string;
 }
 
 export type DiscountType = 'NONE' | 'PERCENTAGE' | 'THRESHOLD_FIXED';
