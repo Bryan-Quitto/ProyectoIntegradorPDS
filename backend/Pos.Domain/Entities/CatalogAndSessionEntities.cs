@@ -10,8 +10,9 @@ public class Product
     public Money Price { get; }
     public string Barcode { get; }
     public decimal AvailableQuantity { get; }
+    public TaxRule Tax { get; }
 
-    public Product(int id, string name, Money price, string barcode = "", decimal availableQuantity = 0m)
+    public Product(int id, string name, Money price, string barcode = "", decimal availableQuantity = 0m, TaxRule? tax = null)
     {
         if (id <= 0)
             throw new DomainValidationException(nameof(Id), "El identificador del producto debe ser un entero positivo.");
@@ -23,6 +24,7 @@ public class Product
         Price = price;
         Barcode = barcode?.Trim() ?? string.Empty;
         AvailableQuantity = availableQuantity;
+        Tax = tax ?? TaxRule.EcuadorVatExcluded;
     }
 }
 
@@ -39,7 +41,7 @@ public class PosSession
     {
         if (id <= 0)
             throw new DomainValidationException(nameof(Id), "El ID de sesión de POS debe ser positivo.");
-        
+
         Id = id;
         Name = name ?? string.Empty;
         State = state ?? string.Empty;
@@ -53,9 +55,10 @@ public class SaleOrderLine
     public string ProductName { get; }
     public Quantity Quantity { get; private set; }
     public Money UnitPrice { get; }
+    public TaxRule Tax { get; }
     public Money SubTotal => new(UnitPrice.Amount * Quantity.Value, UnitPrice.Currency);
 
-    public SaleOrderLine(int productId, string productName, Quantity quantity, Money unitPrice)
+    public SaleOrderLine(int productId, string productName, Quantity quantity, Money unitPrice, TaxRule? tax = null)
     {
         if (productId <= 0)
             throw new DomainValidationException(nameof(ProductId), "El producto es inválido.");
@@ -66,6 +69,7 @@ public class SaleOrderLine
         ProductName = productName.Trim();
         Quantity = quantity;
         UnitPrice = unitPrice;
+        Tax = tax ?? TaxRule.EcuadorVatExcluded;
     }
 
     internal void IncreaseQuantity(Quantity additional)

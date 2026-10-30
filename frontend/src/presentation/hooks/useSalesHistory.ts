@@ -1,21 +1,17 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { SaleOrderResult } from '@/application/ports/IPosApiGateway';
-import { GetSalesHistoryUseCase } from '@/application/useCases/UseCases';
-import { PosApiHttpAdapter } from '@/infrastructure/http/PosApiHttpAdapter';
+import { getSalesHistoryUseCase } from '@/di';
 
 export function useSalesHistory() {
   const [sales, setSales] = useState<SaleOrderResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const gateway = useMemo(() => new PosApiHttpAdapter(), []);
-  const useCase = useMemo(() => new GetSalesHistoryUseCase(gateway), [gateway]);
-
   const loadHistory = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await useCase.execute();
+      const data = await getSalesHistoryUseCase.execute();
       setSales(data);
     } catch (err: unknown) {
       if (err instanceof Error) {
@@ -26,7 +22,7 @@ export function useSalesHistory() {
     } finally {
       setLoading(false);
     }
-  }, [useCase]);
+  }, []);
 
   useEffect(() => {
     loadHistory();

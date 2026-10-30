@@ -2,42 +2,40 @@ import { useState, useMemo, useCallback } from 'react';
 import { Cart } from '@/domain/Cart';
 import { Product } from '@/domain/Product';
 import { DiscountType } from '@/domain/CartItem';
-import { ManageCartUseCase } from '@/application/useCases/UseCases';
+import { manageCartUseCase } from '@/di';
 
 export function usePosCart() {
   const [cartInstance] = useState(() => new Cart());
   const [version, setVersion] = useState(0);
-
-  const cartUseCase = useMemo(() => new ManageCartUseCase(), []);
 
   const triggerUpdate = useCallback(() => {
     setVersion((v) => v + 1);
   }, []);
 
   const addItem = useCallback((product: Product, quantity = 1) => {
-    cartUseCase.addItem(cartInstance, product, quantity);
+    manageCartUseCase.addItem(cartInstance, product, quantity);
     triggerUpdate();
-  }, [cartInstance, cartUseCase, triggerUpdate]);
+  }, [cartInstance, triggerUpdate]);
 
   const updateQuantity = useCallback((productId: number, quantity: number) => {
-    cartUseCase.updateQuantity(cartInstance, productId, quantity);
+    manageCartUseCase.updateQuantity(cartInstance, productId, quantity);
     triggerUpdate();
-  }, [cartInstance, cartUseCase, triggerUpdate]);
+  }, [cartInstance, triggerUpdate]);
 
   const removeItem = useCallback((productId: number) => {
-    cartUseCase.removeItem(cartInstance, productId);
+    manageCartUseCase.removeItem(cartInstance, productId);
     triggerUpdate();
-  }, [cartInstance, cartUseCase, triggerUpdate]);
+  }, [cartInstance, triggerUpdate]);
 
   const clearCart = useCallback(() => {
-    cartUseCase.clearCart(cartInstance);
+    manageCartUseCase.clearCart(cartInstance);
     triggerUpdate();
-  }, [cartInstance, cartUseCase, triggerUpdate]);
+  }, [cartInstance, triggerUpdate]);
 
   const applyDiscount = useCallback((type: DiscountType, value: number) => {
-    cartUseCase.applyDiscount(cartInstance, type, value);
+    manageCartUseCase.applyDiscount(cartInstance, type, value);
     triggerUpdate();
-  }, [cartInstance, cartUseCase, triggerUpdate]);
+  }, [cartInstance, triggerUpdate]);
 
   // Derived state (recalculated when version changes)
   const cartSummary = useMemo(() => {

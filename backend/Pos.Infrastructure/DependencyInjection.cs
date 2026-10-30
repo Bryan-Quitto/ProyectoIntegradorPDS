@@ -31,9 +31,6 @@ public static class DependencyInjection
 
             var envKey = configuration["ODOO__APIKEY"] ?? configuration["ODOO_APIKEY"];
             if (!string.IsNullOrWhiteSpace(envKey)) options.ApiKey = envKey;
-
-            var envPass = configuration["ODOO__PASSWORD"] ?? configuration["ODOO_PASSWORD"];
-            if (!string.IsNullOrWhiteSpace(envPass)) options.Password = envPass;
         });
 
         // 2. JWT Options

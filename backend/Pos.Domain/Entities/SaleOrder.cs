@@ -5,10 +5,21 @@ using Pos.Domain.ValueObjects;
 
 namespace Pos.Domain.Entities;
 
+/// <summary>
+/// Desglose fiscal canónico de una línea. Es la única fuente de los montos que se envían al ERP,
+/// evitando duplicar cálculos fiscales en la infraestructura.
+/// </summary>
+public readonly record struct LineFiscalBreakdown(
+    decimal LineSubtotal,
+    decimal DiscountPercent,
+    decimal LineDiscount,
+    decimal TaxBase,
+    decimal TaxAmount,
+    decimal TotalWithTax);
+
 public class SaleOrder
 {
     private readonly List<SaleOrderLine> _lines = new();
-    private const decimal VatRateEcuador = 0.15m;
 
     public Guid Id { get; }
     public int PosSessionId { get; }
@@ -23,34 +34,45 @@ public class SaleOrder
 
     public IReadOnlyList<SaleOrderLine> Lines => _lines.AsReadOnly();
 
+    /// <summary>Suma de precio de lista × cantidad (antes de descuentos).</summary>
     public decimal SubTotal => _lines.Sum(l => l.SubTotal.Amount);
-    public decimal DiscountAmount => DiscountPolicy.CalculateDiscount(SubTotal);
-    public decimal NetSubTotal => Math.Max(0m, SubTotal - DiscountAmount);
-    public decimal TaxAmount => decimal.Round(NetSubTotal * VatRateEcuador, 2, MidpointRounding.AwayFromZero);
-    public decimal TotalAmount => NetSubTotal + TaxAmount;
-    public decimal VatRate => VatRateEcuador;
 
     /// <summary>
-    /// Desglose canónico de montos e impuestos por línea según las reglas de negocio de Ecuador (15% IVA).
-    /// Evita duplicar la lógica fiscal en infraestructura o builders externos.
+    /// Porcentaje global de descuento resultante de la estrategia (Strategy) activa.
+    /// Se distribuye uniformemente en las líneas (el ERP modela el descuento como % por línea).
     /// </summary>
-    public (decimal LineSubtotal, decimal LineDiscount, decimal NetSubtotal, decimal LineTotalWithTax) GetLineFiscalAmounts(SaleOrderLine line)
+    public decimal DiscountPercent
     {
-        decimal totalLineSubtotals = SubTotal;
-        decimal discountRatio = totalLineSubtotals > 0 ? (DiscountAmount / totalLineSubtotals) : 0m;
-        decimal lineDiscount = decimal.Round(line.SubTotal.Amount * discountRatio, 2, MidpointRounding.AwayFromZero);
-        decimal netLineSubtotal = Math.Max(0m, line.SubTotal.Amount - lineDiscount);
-        decimal lineTax = decimal.Round(netLineSubtotal * VatRateEcuador, 2, MidpointRounding.AwayFromZero);
-        decimal lineTotalWithTax = netLineSubtotal + lineTax;
-        return (line.SubTotal.Amount, lineDiscount, netLineSubtotal, lineTotalWithTax);
+        get
+        {
+            var subtotal = SubTotal;
+            if (subtotal <= 0m) return 0m;
+            var discount = Math.Min(DiscountPolicy.CalculateDiscount(subtotal), subtotal);
+            return discount / subtotal * 100m;
+        }
     }
 
-    public SaleOrder(int posSessionId, string customerDocument = "9999999999999", string customerName = "Consumidor Final", IDiscountPolicy? discountPolicy = null)
+    /// <summary>Descuento efectivo (suma de descuentos por línea ya redondeados).</summary>
+    public decimal DiscountAmount => Breakdown().Sum(b => b.LineDiscount);
+
+    /// <summary>Base imponible total (sin impuestos).</summary>
+    public decimal NetSubTotal => Breakdown().Sum(b => b.TaxBase);
+
+    public decimal TaxAmount => Breakdown().Sum(b => b.TaxAmount);
+
+    public decimal TotalAmount => Breakdown().Sum(b => b.TotalWithTax);
+
+    public SaleOrder(
+        int posSessionId,
+        string customerDocument = "9999999999999",
+        string customerName = "Consumidor Final",
+        IDiscountPolicy? discountPolicy = null,
+        Guid? id = null)
     {
         if (posSessionId <= 0)
             throw new DomainValidationException(nameof(PosSessionId), "La sesión de POS es requerida y debe ser un ID válido.");
 
-        Id = Guid.NewGuid();
+        Id = id is { } given && given != Guid.Empty ? given : Guid.NewGuid();
         PosSessionId = posSessionId;
         CustomerDocument = string.IsNullOrWhiteSpace(customerDocument) ? "9999999999999" : customerDocument.Trim();
         CustomerName = string.IsNullOrWhiteSpace(customerName) ? "Consumidor Final" : customerName.Trim();
@@ -58,6 +80,22 @@ public class SaleOrder
         State = new DraftState();
         CreatedAtUtc = DateTime.UtcNow;
     }
+
+    /// <summary>
+    /// Desglose fiscal de una línea respetando la regla fiscal del producto
+    /// (impuesto incluido o excluido del precio), con redondeo por línea.
+    /// </summary>
+    public LineFiscalBreakdown GetLineFiscalAmounts(SaleOrderLine line)
+    {
+        var pct = DiscountPercent;
+        var lineSubtotal = line.SubTotal.Amount;
+        var discountedAmount = decimal.Round(lineSubtotal * (1m - pct / 100m), 2, MidpointRounding.AwayFromZero);
+        var lineDiscount = lineSubtotal - discountedAmount;
+        var (taxBase, tax, total) = line.Tax.Apply(discountedAmount);
+        return new LineFiscalBreakdown(lineSubtotal, pct, lineDiscount, taxBase, tax, total);
+    }
+
+    private IEnumerable<LineFiscalBreakdown> Breakdown() => _lines.Select(GetLineFiscalAmounts);
 
     public void AddLine(Product product, Quantity quantity)
     {
@@ -70,11 +108,11 @@ public class SaleOrder
         }
         else
         {
-            _lines.Add(new SaleOrderLine(product.Id, product.Name, quantity, product.Price));
+            _lines.Add(new SaleOrderLine(product.Id, product.Name, quantity, product.Price, product.Tax));
         }
     }
 
-    public void AddLine(int productId, string productName, Quantity quantity, Money unitPrice)
+    public void AddLine(int productId, string productName, Quantity quantity, Money unitPrice, TaxRule? tax = null)
     {
         EnsureCanModify();
 
@@ -85,7 +123,7 @@ public class SaleOrder
         }
         else
         {
-            _lines.Add(new SaleOrderLine(productId, productName, quantity, unitPrice));
+            _lines.Add(new SaleOrderLine(productId, productName, quantity, unitPrice, tax));
         }
     }
 

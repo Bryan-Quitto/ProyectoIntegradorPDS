@@ -2,7 +2,7 @@ import { Cart } from '@/domain/Cart';
 import { Product } from '@/domain/Product';
 import { DiscountType } from '@/domain/CartItem';
 import { validateEcuadorianId } from '@/domain/ecuadorianIdValidator';
-import { IPosApiGateway, CreateSaleRequest, SaleOrderResult, PosApiError } from '../ports/IPosApiGateway';
+import { IPosApiGateway, CreateSaleRequest, SaleOrderResult, PosApiError, PosSession } from '../ports/IPosApiGateway';
 
 export class ManageCartUseCase {
   public addItem(cart: Cart, product: Product, quantity = 1): void {
@@ -27,8 +27,33 @@ export class ManageCartUseCase {
 }
 
 export class SearchCatalogUseCase {
-  public async execute(gateway: IPosApiGateway, query?: string): Promise<Product[]> {
-    return await gateway.getProducts(query);
+  private readonly _gateway?: IPosApiGateway;
+
+  constructor(gateway?: IPosApiGateway) {
+    this._gateway = gateway;
+  }
+
+  public async execute(queryOrGateway?: string | IPosApiGateway, query?: string): Promise<Product[]> {
+    if (queryOrGateway && typeof queryOrGateway === 'object' && 'getProducts' in queryOrGateway) {
+      return await queryOrGateway.getProducts(query);
+    }
+    const gateway = this._gateway;
+    if (!gateway) {
+      throw new Error('IPosApiGateway no provisto a SearchCatalogUseCase');
+    }
+    return await gateway.getProducts(queryOrGateway as string | undefined);
+  }
+}
+
+export class GetActiveSessionUseCase {
+  private readonly _gateway: IPosApiGateway;
+
+  constructor(gateway: IPosApiGateway) {
+    this._gateway = gateway;
+  }
+
+  public async execute(): Promise<PosSession | null> {
+    return await this._gateway.getActiveSession();
   }
 }
 

@@ -1,8 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Product } from '@/domain/Product';
 import { PosSession } from '@/application/ports/IPosApiGateway';
-import { SearchCatalogUseCase } from '@/application/useCases/UseCases';
-import { PosApiHttpAdapter } from '@/infrastructure/http/PosApiHttpAdapter';
+import { searchCatalogUseCase, getActiveSessionUseCase } from '@/di';
 
 export function useProducts() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -10,16 +9,13 @@ export function useProducts() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const gateway = useMemo(() => new PosApiHttpAdapter(), []);
-  const searchUseCase = useMemo(() => new SearchCatalogUseCase(), []);
-
   const loadData = useCallback(async (query = '') => {
     setLoading(true);
     setError(null);
     try {
       const [prods, session] = await Promise.all([
-        searchUseCase.execute(gateway, query),
-        gateway.getActiveSession(),
+        searchCatalogUseCase.execute(query),
+        getActiveSessionUseCase.execute(),
       ]);
       setProducts(prods);
       setActiveSession(session);
@@ -32,7 +28,7 @@ export function useProducts() {
     } finally {
       setLoading(false);
     }
-  }, [gateway, searchUseCase]);
+  }, []);
 
   useEffect(() => {
     loadData();

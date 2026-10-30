@@ -98,10 +98,13 @@ public class CreateSaleUseCase
             command.PosSessionId,
             command.CustomerDocument,
             command.CustomerName,
-            discountPolicy);
+            discountPolicy,
+            id: DeriveOrderId(command.IdempotencyKey));
 
-        // 5. Cargar catálogo para validar productos y precios oficiales de Odoo
-        var products = await _odooGateway.SearchProductsAsync(string.Empty, cancellationToken);
+        // 5. RN-03: Cargar precio y regla fiscal oficiales desde Odoo SOLO para los productos solicitados.
+        //    Nunca se confía en precios enviados por el cliente.
+        var requestedIds = command.Items.Select(i => i.ProductId).Distinct().ToList();
+        var products = await _odooGateway.GetProductsByIdsAsync(requestedIds, cancellationToken);
         var productDict = products.ToDictionary(p => p.Id);
 
         foreach (var item in command.Items)
@@ -114,10 +117,11 @@ public class CreateSaleUseCase
 
             if (!productDict.TryGetValue(item.ProductId, out var prodDto))
             {
-                throw new ApplicationValidationException(nameof(item.ProductId), $"El producto con ID {item.ProductId} no existe en el catálogo de Odoo.");
+                throw new ApplicationValidationException(nameof(item.ProductId), $"El producto con ID {item.ProductId} no existe en el catálogo de Odoo o no está habilitado para el POS.");
             }
 
-            var product = new Product(prodDto.Id, prodDto.Name, new Money(prodDto.Price), prodDto.Barcode, prodDto.AvailableQuantity);
+            var taxRule = new TaxRule(prodDto.TaxRate, prodDto.PriceIncludesTax, prodDto.TaxIds);
+            var product = new Product(prodDto.Id, prodDto.Name, new Money(prodDto.Price), prodDto.Barcode, prodDto.AvailableQuantity, taxRule);
             order.AddLine(product, new Quantity(item.Quantity));
         }
 
@@ -167,6 +171,23 @@ public class CreateSaleUseCase
         }
 
         return responseDto;
+    }
+
+    /// <summary>
+    /// Deriva un identificador de orden determinista a partir de la Idempotency-Key.
+    /// Ese ID viaja a Odoo como <c>uuid</c> del <c>pos.order</c> (restricción única en Odoo), de modo que
+    /// un reintento tras una caída entre "Odoo confirmó" y "SQLite guardó" no duplica la venta en el ERP.
+    /// </summary>
+    private static Guid DeriveOrderId(string? idempotencyKey)
+    {
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+            return Guid.NewGuid();
+
+        if (Guid.TryParse(idempotencyKey, out var parsed))
+            return parsed;
+
+        var hash = System.Security.Cryptography.MD5.HashData(System.Text.Encoding.UTF8.GetBytes(idempotencyKey.Trim()));
+        return new Guid(hash);
     }
 }
 

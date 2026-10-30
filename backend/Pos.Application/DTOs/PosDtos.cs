@@ -1,11 +1,20 @@
 namespace Pos.Application.DTOs;
 
+/// <summary>
+/// Producto tal como lo publica la fuente de verdad (Odoo). Los campos fiscales
+/// (<paramref name="TaxRate"/>, <paramref name="PriceIncludesTax"/>, <paramref name="TaxIds"/>)
+/// provienen de <c>account.tax</c> del producto; por defecto: IVA 15% excluido del precio.
+/// </summary>
 public record ProductDto(
     int Id,
     string Name,
     decimal Price,
     string Barcode,
-    decimal AvailableQuantity
+    decimal AvailableQuantity,
+    string DefaultCode = "",
+    decimal TaxRate = 0.15m,
+    bool PriceIncludesTax = false,
+    IReadOnlyList<int>? TaxIds = null
 );
 
 public record PosSessionDto(

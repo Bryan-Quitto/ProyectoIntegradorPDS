@@ -1,14 +1,11 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback } from 'react';
 import { Cart } from '@/domain/Cart';
-import { CheckoutSaleUseCase, CheckoutResult } from '@/application/useCases/UseCases';
-import { PosApiHttpAdapter } from '@/infrastructure/http/PosApiHttpAdapter';
+import { CheckoutResult } from '@/application/useCases/UseCases';
+import { checkoutSaleUseCase } from '@/di';
 
 export function useCheckout() {
   const [processing, setProcessing] = useState<boolean>(false);
   const [lastResult, setLastResult] = useState<CheckoutResult | null>(null);
-
-  const gateway = useMemo(() => new PosApiHttpAdapter(), []);
-  const checkoutUseCase = useMemo(() => new CheckoutSaleUseCase(gateway), [gateway]);
 
   const checkout = useCallback(
     async (
@@ -21,7 +18,7 @@ export function useCheckout() {
       setLastResult(null);
 
       try {
-        const result = await checkoutUseCase.execute({
+        const result = await checkoutSaleUseCase.execute({
           cart,
           posSessionId,
           customerDocument,
@@ -33,7 +30,7 @@ export function useCheckout() {
         setProcessing(false);
       }
     },
-    [checkoutUseCase]
+    []
   );
 
   return {

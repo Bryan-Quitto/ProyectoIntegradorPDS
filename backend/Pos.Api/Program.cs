@@ -9,12 +9,25 @@ using Pos.Application.UseCases;
 using Pos.Infrastructure;
 
 // 1. Cargar Variables de Entorno desde .env (RNF-09)
-var envPath = Path.Combine(Directory.GetCurrentDirectory(), ".env");
-if (File.Exists(envPath))
+var candidatePaths = new[]
 {
-    Env.Load(envPath);
+    Path.Combine(Directory.GetCurrentDirectory(), ".env"),
+    Path.Combine(Directory.GetCurrentDirectory(), "..", ".env"),
+    Path.Combine(AppContext.BaseDirectory, ".env"),
+    Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".env")
+};
+var loaded = false;
+foreach (var path in candidatePaths)
+{
+    var full = Path.GetFullPath(path);
+    if (File.Exists(full))
+    {
+        Env.Load(full);
+        loaded = true;
+        break;
+    }
 }
-else
+if (!loaded)
 {
     Env.Load();
 }

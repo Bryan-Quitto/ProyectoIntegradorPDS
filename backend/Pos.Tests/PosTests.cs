@@ -97,7 +97,7 @@ public class PosTests
             .Returns(new PosSessionDto(1, "Main POS", "opened", 2, IsOpen: true));
 
         // Catálogo vacío
-        odooGateway.SearchProductsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        odooGateway.GetProductsByIdsAsync(Arg.Any<IReadOnlyCollection<int>>(), Arg.Any<CancellationToken>())
             .Returns(new List<ProductDto>());
 
         var useCase = new CreateSaleUseCase(odooGateway, idempotencyStore, historyRepo);
@@ -133,7 +133,7 @@ public class PosTests
         odooGateway.GetActiveSessionAsync(Arg.Any<CancellationToken>())
             .Returns(new PosSessionDto(1, "Main POS", "opened", 2, IsOpen: true));
 
-        odooGateway.SearchProductsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        odooGateway.GetProductsByIdsAsync(Arg.Any<IReadOnlyCollection<int>>(), Arg.Any<CancellationToken>())
             .Returns(new List<ProductDto>
             {
                 new(1, "Coca Cola", 1.50m, "123456", 20m)
@@ -313,5 +313,82 @@ public class PosTests
         // Assert
         result.Should().BeNull();
         jwtProvider.DidNotReceive().GenerateToken(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+    }
+
+    // =========================================================================
+    // P13: Happy path - venta en efectivo de 2 productos (Sección 13)
+    // Replica la configuración REAL de Odoo 20 local: PROD-001 ($15) y PROD-002 ($20)
+    // con impuesto "VAT 15% G" (id 1) INCLUIDO en el precio.
+    // =========================================================================
+    [Fact]
+    public async Task P13_CreateSale_ValidTwoProductsCashOrder_ReturnsSyncedOrderWithVerifiedTotals()
+    {
+        // Arrange
+        var odooGateway = Substitute.For<IOdooPosGateway>();
+        var idempotencyStore = Substitute.For<IIdempotencyStore>();
+        var historyRepo = Substitute.For<ISaleHistoryRepository>();
+
+        const int sessionId = 4;
+        var idempotencyKey = Guid.NewGuid().ToString();
+
+        odooGateway.GetActiveSessionAsync(Arg.Any<CancellationToken>())
+            .Returns(new PosSessionDto(sessionId, "My Company/00002", "opened", 2, IsOpen: true));
+
+        odooGateway.GetProductsByIdsAsync(Arg.Any<IReadOnlyCollection<int>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ProductDto>
+            {
+                new(3, "Producto A", 15.00m, "", 100m, "PROD-001", TaxRate: 0.15m, PriceIncludesTax: true, TaxIds: new[] { 1 }),
+                new(4, "Producto B", 20.00m, "", 100m, "PROD-002", TaxRate: 0.15m, PriceIncludesTax: true, TaxIds: new[] { 1 })
+            });
+
+        SaleOrder? orderSentToOdoo = null;
+        string? stateWhenSent = null;
+        odooGateway.SyncSaleOrderAsync(Arg.Any<SaleOrder>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                orderSentToOdoo = ci.Arg<SaleOrder>();
+                stateWhenSent = orderSentToOdoo.State.StateName;
+                return new OdooSyncResultDto(true, "00002-001-0001", 101, null);
+            });
+
+        var useCase = new CreateSaleUseCase(odooGateway, idempotencyStore, historyRepo);
+        var command = new CreateSaleCommand(
+            IdempotencyKey: idempotencyKey,
+            PosSessionId: sessionId,
+            CustomerDocument: "9999999999999",
+            CustomerName: "Consumidor Final",
+            DiscountType: "PERCENTAGE",
+            DiscountValue: 10m,
+            Items: new List<CreateSaleItemDto> { new(3, 1), new(4, 1) });
+
+        // Act
+        var result = await useCase.ExecuteAsync(command);
+
+        // Assert - RN-03: precios consultados en Odoo SOLO para los productos pedidos
+        await odooGateway.Received(1).GetProductsByIdsAsync(
+            Arg.Is<IReadOnlyCollection<int>>(ids => ids.Count == 2 && ids.Contains(3) && ids.Contains(4)),
+            Arg.Any<CancellationToken>());
+
+        // Assert - Totales (IVA 15% incluido, descuento 10% Strategy, redondeo por línea):
+        //   Subtotal 35.00 | Descuento 3.50 | A: 13.50 -> base 11.74 + IVA 1.76 | B: 18.00 -> base 15.65 + IVA 2.35
+        result.SubTotal.Should().Be(35.00m);
+        result.DiscountAmount.Should().Be(3.50m);
+        result.TaxAmount.Should().Be(4.11m);
+        result.TotalAmount.Should().Be(31.50m);
+        result.Lines.Should().HaveCount(2);
+        result.Lines.Select(l => l.UnitPrice).Should().Equal(15.00m, 20.00m);
+
+        // Assert - State: Odoo recibe la orden Confirmed y el agregado termina Synced
+        stateWhenSent.Should().Be("Confirmed");
+        orderSentToOdoo!.State.StateName.Should().Be("Synced");
+        orderSentToOdoo.NetSubTotal.Should().Be(27.39m);
+        result.State.Should().Be("Synced");
+        result.OdooOrderId.Should().Be(101);
+        result.OdooOrderReference.Should().Be("00002-001-0001");
+
+        // Assert - Idempotencia: el ID de la orden (uuid enviado a Odoo) se deriva de la Idempotency-Key
+        result.OrderId.Should().Be(Guid.Parse(idempotencyKey));
+        await idempotencyStore.Received(1).SaveKeyAsync(idempotencyKey, result.OrderId, Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await historyRepo.Received(1).SaveSaleAsync(Arg.Is<SaleOrderResponseDto>(s => s.OrderId == result.OrderId), Arg.Any<CancellationToken>());
     }
 }
