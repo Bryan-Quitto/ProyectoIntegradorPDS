@@ -1,0 +1,30 @@
+services:
+  db:
+    image: postgres:16
+    container_name: odoo20_db
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=odoo
+      - POSTGRES_PASSWORD=odoo_secure_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  web:
+    image: odoo:20.0
+    container_name: odoo20_web
+    depends_on:
+      - db
+    ports:
+      - "8069:8069"
+    environment:
+      - HOST=db
+      - USER=odoo
+      - PASSWORD=odoo_secure_pass
+    volumes:
+      - odoo_data:/var/lib/odoo
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  odoo_data:
