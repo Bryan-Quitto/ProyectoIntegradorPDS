@@ -173,7 +173,7 @@ public class CreateSaleUseCase
             PaymentMethod: "Efectivo",
             AmountPaid: order.TotalAmount,
             SessionName: activeSession?.Name ?? $"Sesión #{order.PosSessionId}",
-            OperatorName: "Cajero POS"
+            OperatorName: !string.IsNullOrWhiteSpace(activeSession?.UserName) ? activeSession.UserName : "Cajero POS"
         );
 
         // 10. Persistencia local para trazabilidad e idempotencia

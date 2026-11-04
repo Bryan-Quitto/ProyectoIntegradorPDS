@@ -5,6 +5,7 @@ export interface PosSession {
   name: string;
   state: string;
   userId: number;
+  userName?: string;
   isOpen: boolean;
 }
 

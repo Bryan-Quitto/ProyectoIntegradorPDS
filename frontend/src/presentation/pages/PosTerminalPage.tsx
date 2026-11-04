@@ -79,7 +79,10 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
           {activeSession ? (
             <Badge variant="success" className="bg-emerald-50 text-emerald-700 border-emerald-300 flex items-center gap-1.5 py-1">
               <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              Sesión Odoo #{activeSession.id}: {activeSession.name} ({activeSession.state})
+              <span>
+                Sesión Odoo #{activeSession.id}: {activeSession.name} ({activeSession.state})
+                {activeSession.userName ? ` • Cajero: ${activeSession.userName}` : ''}
+              </span>
             </Badge>
           ) : (
             <Badge variant="warning" className="bg-amber-50 text-amber-700 border-amber-300 flex items-center gap-1.5 py-1">

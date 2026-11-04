@@ -22,7 +22,8 @@ public record PosSessionDto(
     string Name,
     string State,
     int UserId,
-    bool IsOpen
+    bool IsOpen,
+    string UserName = ""
 );
 
 public record CreateSaleItemDto(

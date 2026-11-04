@@ -21,8 +21,8 @@ En cumplimiento de la especificación académica oficial (*Documento de Requisit
 | **RF-08** | Rechazar descuentos no autorizados con mensajes claros | ✅ **Completado** | Validación de dominio en `PercentageDiscountPolicy` ($0\% \le \text{desc} \le 100\%$) | `DomainValidationException` con mensaje claro |
 | **RF-09** | Confirmar una venta con líneas, precios y descuentos | ✅ **Completado** | `CreateSaleUseCase`, agregado `SaleOrder` (patrón State) | xUnit `P13`, UI `PaymentModal.tsx` |
 | **RF-10** | Seleccionar un método de pago configurado | ✅ **Completado** | Detección y resolución dinámica del método Efectivo en la sesión POS de Odoo | `ResolveCashPaymentMethodIdAsync` en Adapter |
-| **RF-11** | Registrar la venta y el pago en Odoo mediante integración | ✅ **Completado** | Sincronización atómica mediante método oficial `pos.order.sync_from_ui` (JSON-2) | xUnit `P13`, HTTP 201 Created |
-| **RF-12** | Mostrar identificador, estado y resultado real | ✅ **Completado** | Retorno de `odooOrderReference`, `odooOrderId` y estado `Synced`/`paid` | Modal de éxito en UI, comprobación en Odoo |
+| **RF-11** | Registrar la venta y el pago en Odoo mediante integración | ✅ **Completado** | Sincronización atómica mediante método oficial `pos.order.sync_from_ui` (JSON-2) | **Prueba P09 (Integración Real)**, xUnit `P13`, HTTP 201 Created |
+| **RF-12** | Mostrar identificador, estado y resultado real | ✅ **Completado** | Retorno de `odooOrderReference`, `odooOrderId` y estado `Synced`/`paid` | Modal de éxito en UI, comprobación en Odoo (Evidencia P09) |
 | **RF-13** | Consultar el historial de ventas registradas | ✅ **Completado** | Vista `SalesHistoryPage.tsx`, auditoría local en SQLite | `GET /api/sales`, Vitest `P19` |
 | **RF-14** | Visualizar el detalle de una venta | ✅ **Completado** | Modal `SaleDetailModal.tsx` con desglose fiscal completo de líneas | `GET /api/sales/{id}`, xUnit `P14`, Vitest `P15` |
 | **RF-15** | Impedir operaciones con datos inválidos o inconsistentes | ✅ **Completado** | Validación de sesión POS cerrada y producto inexistente antes de llamar a Odoo | xUnit `P03` (sesión cerrada), `P04` (producto inválido) |
@@ -46,17 +46,22 @@ En cumplimiento estricto con las Secciones 7 y 17 de la rúbrica de Patrones de 
 
 ---
 
-## 3. Reglas de Negocio (RN) y Requisitos No Funcionales (RNF)
+## 3. Matriz de Reglas de Negocio (RN) y Requisitos No Funcionales (RNF)
 
-### Reglas de Negocio Implementadas
-- **RN-01:** Rechazo estricto de confirmación de órdenes sin productos (`DomainValidationException`).
-- **RN-02:** Cantidad de productos estrictamente mayor a 0 (Value Object `Quantity`).
-- **RN-03:** Precios e impuestos oficiales consultados directamente en Odoo 20; el frontend no impone precios arbitrarios.
-- **RN-04:** Restricción y validación de porcentajes de descuento entre 0% y 100%.
-- **RN-05:** Rechazo de ventas inconsistentes (sesión cerrada, producto inactivo o no habilitado en POS).
-- **RN-06:** Congelamiento de ítems y descuentos una vez confirmada la orden (patrón State).
-- **RN-07:** Prohibido declarar éxito ficticio si Odoo rechaza o no responde la sincronización.
-- **RN-08:** Idempotencia estricta en ventas mediante encabezado `Idempotency-Key` y persistencia en SQLite local.
+### Matriz Oficial de Reglas de Negocio (RN-01 a RN-08)
+
+En concordancia con la Sección 5 del documento de especificación académica, se detalla el cumplimiento exacto de cada regla de negocio:
+
+| Código | Regla de Negocio (PDF) | Implementación y Mecanismo en Código | Prueba Automatizada / Evidencia Verificable |
+| :---: | :--- | :--- | :--- |
+| **RN-01** | La venta contiene al menos un producto. | `SaleOrder.Confirm()` valida `_lines.Count > 0`. En frontend, botón de cobro deshabilitado si `items.length === 0`. | xUnit **P01** (`DomainValidationException`) y Vitest en UI. |
+| **RN-02** | Las cantidades son mayores que cero. | Value Object `Quantity` rechaza valores $\le 0$. En frontend `Cart.addItem` y `Cart.updateQuantity` restringen rango $[1, 1000]$. | xUnit **P02** (prueba con $0, -1, -10$) y Vitest **P17**. |
+| **RN-03** | Los precios de referencia se obtienen y verifican con Odoo; el frontend no impone precios arbitrarios. | `CreateSaleUseCase` consulta Odoo vía `GetProductsByIdsAsync` para resolver precios oficiales y regla fiscal; ignora cualquier precio enviado por el cliente. | xUnit **P13** y trazas JSON-2 en `docs/evidencias/semana1-2-integracion-real.md`. |
+| **RN-04** | Los descuentos cumplen las políticas autorizadas. | Patrón Strategy (`IDiscountPolicy`) valida porcentajes en rango $[0, 100]\%$ y umbrales mínimos. | xUnit **P10** (`PercentageDiscountPolicy` lanza `DomainValidationException`). |
+| **RN-05** | No se confirma una venta inconsistente. | Bloqueo si sesión POS de Odoo está cerrada o producto no existe en el catálogo ERP. | xUnit **P03** (sesión cerrada) y xUnit **P04** (producto no habilitado). |
+| **RN-06** | Una venta confirmada no se edita como venta en preparación. | Patrón State (`ISaleOrderState`): `ConfirmedState` y `SyncedState` lanzan `SaleOrderStateException` al intentar mutar líneas o descuentos. | Validado en agregado de dominio `SaleOrder` (Ficha **DD-02**). |
+| **RN-07** | No se informa un pago exitoso sin confirmación del sistema responsable. | Excepciones RPC o timeout de Odoo abortan la operación local sin marcar la orden como pagada ni mostrar falso éxito. | xUnit **P05** (backend) y Vitest **P08** (traducción a `ProblemDetails` en frontend). |
+| **RN-08** | Una petición repetida no debe generar una segunda venta accidental. | Tabla `idempotency_keys` en SQLite local y encabezado HTTP `Idempotency-Key` devuelven la respuesta en caché sin duplicar en Odoo. | xUnit **P06** y script de prueba de doble POST en consola (Capa 3 de Guía). |
 
 ### Requisitos No Funcionales Clave
 - **RNF-01 / RNF-02:** Clean Architecture tanto en backend (.NET 10) como en frontend (React 18).

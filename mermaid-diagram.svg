@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 889.5821666666666 1070.7" width="889.5821666666666" height="1070.7" style="--bg:#18181B;--fg:#F4F4F5;--line:#71717A;--muted:#A1A1AA;--surface:#27272A;--border:#3F3F46;background:var(--bg)">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round" />
+  </marker>
+</defs>
+<g class="subgraph" data-id="Frontend_React" data-label="Frontend React 18 / TS">
+  <rect x="40" y="40" width="413.516" height="351.6" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <rect x="40" y="40" width="413.516" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="52" y="54" font-size="12" font-weight="600" fill="var(--_text-sec)" dy="4.199999999999999">Frontend React 18 / TS</text>
+</g>
+<g class="subgraph" data-id="Backend_NET10" data-label="Backend .NET 10">
+  <rect x="322.1065" y="519.9000000000001" width="527.4756666666666" height="351.6" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <rect x="322.1065" y="519.9000000000001" width="527.4756666666666" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="334.1065" y="533.9000000000001" font-size="12" font-weight="600" fill="var(--_text-sec)" dy="4.199999999999999">Backend .NET 10</text>
+</g>
+<polyline class="edge" data-from="BI" data-to="ODOO" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="JSON-2 / RPC" points="724.5038333333332,600.8000000000001 724.5038333333332,993.8000000000002" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="FI" data-to="BA" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="HTTP REST" points="305.7391666666667,120.9 305.7391666666667,132.9 436.516,132.9 436.51599999999996,648.8000000000001" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="FP" data-to="FA" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="296.61400000000003,205.8 296.61400000000003,217.8 226.52566666666667,217.8 226.52566666666667,253.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="FA" data-to="FD" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="197.057,290.70000000000005 197.057,338.70000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="FI" data-to="FA" data-style="dotted" data-arrow-start="false" data-arrow-end="true" data-label="Implements Port" points="228.27683333333334,120.9 228.27683333333334,132.9 97.5,132.9 97.5,217.8 167.58833333333334,217.8 167.58833333333334,253.8" fill="none" stroke="var(--_line)" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="BA" data-to="BApp" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="436.51599999999996,685.7 436.51599999999996,697.7 489.0920833333333,697.7 489.0920833333333,733.7" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="BApp" data-to="BD" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="525.97075,770.6000000000001 525.97075,818.6000000000001" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)" />
+<polyline class="edge" data-from="BI" data-to="BApp" data-style="dotted" data-arrow-start="false" data-arrow-end="true" data-label="Implements Interface" points="615.4254999999999,600.8000000000001 615.4254999999999,697.7 562.8494166666667,697.7 562.8494166666667,733.7" fill="none" stroke="var(--_line)" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrowhead)" />
+<g class="edge-label" data-from="BI" data-to="ODOO" data-label="JSON-2 / RPC">
+  <rect x="683.0038333333332" y="920.5" width="82.99000000000001" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="724.4988333333332" y="935.65" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">JSON-2 / RPC</text>
+</g>
+<g class="edge-label" data-from="FI" data-to="BA" data-label="HTTP REST">
+  <rect x="398.01599999999996" y="440.6" width="76.45599999999999" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="436.24399999999997" y="455.75" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">HTTP REST</text>
+</g>
+<g class="edge-label" data-from="FI" data-to="FA" data-label="Implements Port">
+  <rect x="52.00000000000001" y="172.2" width="90.71200000000003" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="97.35600000000002" y="187.35" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">Implements Port</text>
+</g>
+<g class="edge-label" data-from="BI" data-to="BApp" data-label="Implements Interface">
+  <rect x="558.9254999999999" y="652.1000000000001" width="112.09600000000003" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1" />
+  <text x="614.9735" y="667.2500000000001" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">Implements Interface</text>
+</g>
+<g class="node" data-id="ODOO" data-label="Odoo 20 Community" data-shape="rectangle">
+  <rect x="647.2128333333333" y="993.8" width="154.582" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="724.5038333333332" y="1012.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Odoo 20 Community</text>
+</g>
+<g class="node" data-id="FP" data-label="Presentation: UI Components + Pages" data-shape="rectangle">
+  <rect x="166.71200000000002" y="168.9" width="259.804" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="296.61400000000003" y="187.35000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Presentation: UI Components + Pages</text>
+</g>
+<g class="node" data-id="FA" data-label="Application: Use Cases" data-shape="rectangle">
+  <rect x="108.65100000000001" y="253.8" width="176.81199999999998" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="197.05700000000002" y="272.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Application: Use Cases</text>
+</g>
+<g class="node" data-id="FD" data-label="Domain: POS Entities &amp; Rules" data-shape="rectangle">
+  <rect x="93.09" y="338.70000000000005" width="207.934" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="197.05700000000002" y="357.15000000000003" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Domain: POS Entities &amp; Rules</text>
+</g>
+<g class="node" data-id="FI" data-label="Infrastructure: Odoo API Adapter" data-shape="rectangle">
+  <rect x="150.8145" y="84" width="232.38699999999994" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="267.008" y="102.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Infrastructure: Odoo API Adapter</text>
+</g>
+<g class="node" data-id="BA" data-label="Presentation: Minimal APIs" data-shape="rectangle">
+  <rect x="338.1065" y="648.8000000000001" width="196.81899999999996" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="436.51599999999996" y="667.2500000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Presentation: Minimal APIs</text>
+</g>
+<g class="node" data-id="BApp" data-label="Application: Use Cases &amp; Ports" data-shape="rectangle">
+  <rect x="415.33475" y="733.7" width="221.272" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="525.97075" y="752.1500000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Application: Use Cases &amp; Ports</text>
+</g>
+<g class="node" data-id="BD" data-label="Domain: PosOrder, State, Strategy" data-shape="rectangle">
+  <rect x="406.07225" y="818.6000000000001" width="239.79699999999994" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="525.97075" y="837.0500000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Domain: PosOrder, State, Strategy</text>
+</g>
+<g class="node" data-id="BI" data-label="Infrastructure: Odoo JSON-2 Gateway &amp; Local DB" data-shape="rectangle">
+  <rect x="506.3471666666666" y="563.9000000000001" width="327.23499999999996" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="669.9646666666666" y="582.3500000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Infrastructure: Odoo JSON-2 Gateway &amp; Local DB</text>
+</g>
+</svg>

@@ -222,7 +222,7 @@ Con 1 `Producto A` ($15.00) y 1 `Producto B` ($20.00) en el carrito:
    * **Total a Liquidar:** `$31.50`
 3. Vuelve a hacer clic en **Sin desc.** para dejar la orden en `$35.00` listos para el pago en efectivo.
 
-#### ✅ RF-09 a RF-12: Venta en Efectivo y Sincronización en Odoo
+#### ✅ PRUEBA P09 / RF-09 a RF-12: Venta en Efectivo de 2 Productos y Sincronización en Odoo (Integración Real)
 1. Con los 2 productos en el carrito (Total $35.00), haz clic en **Cobrar e Imprimir**.
 2. Se abre el modal **Finalizar Cobro POS**:
    * Cédula/RUC: `9999999999999` (Consumidor Final).
@@ -237,7 +237,7 @@ Con 1 `Producto A` ($15.00) y 1 `Producto B` ($20.00) en el carrito:
 
 ---
 
-### CAPA 2: VERIFICACIÓN DE REGISTROS EN ODOO ERP
+### CAPA 2: VERIFICACIÓN DE REGISTROS EN ODOO ERP (COMPLEMENTO PRUEBA P09)
 
 1. Abre tu navegador en `http://localhost:8069`.
 2. Ve a **Punto de Venta** -> **Órdenes** -> **Órdenes**.
@@ -249,6 +249,13 @@ Con 1 `Producto A` ($15.00) y 1 `Producto B` ($20.00) en el carrito:
 4. En el Frontend, haz clic en el botón superior **Historial de Ventas**:
    * Aparecerá la tabla de auditoría local de SQLite sincronizada.
    * Haz clic en **Ver Detalle** para ver el desglose fiscal idéntico al de Odoo.
+
+#### 📸 Evidencia Visual Registrada de la Prueba P09:
+
+| 1. Confirmación de Cobro en React | 2. Registro Contable en Odoo ERP |
+| :---: | :---: |
+| ![Venta en React](docs/evidencias/img/p09-01-react-venta-confirmada.png) | ![Orden en Odoo](docs/evidencias/img/p09-02-odoo-orden-sincronizada.png) |
+| *Modal de éxito con referencia Odoo y monto \$35.00* | *Orden oficial en Odoo en estado 'Pagado' con IVA 15%* |
 
 ---
 
@@ -301,7 +308,8 @@ Ejecuta desde la carpeta raíz del proyecto:
 | **RN-07 / P05** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P05"` | Error RPC o timeout de Odoo aborta sin declarar falso éxito. |
 | **RN-08 / P06** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P06"` | Misma clave de idempotencia retorna orden previa sin llamar a Odoo. |
 | **RF-07 / P10** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P10"` | Principio Open/Closed (SOLID): Inyecta nueva política VIP sin tocar `SaleOrder`. |
-| **Happy Path / P13** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P13"` | Venta completa de 2 productos con desglose fiscal Odoo (IVA 15% incluido). |
+| **Happy Path / P13 (Unitaria de P09)** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P13"` | Validación unitaria (Mock) del flujo de 2 productos y desglose fiscal Odoo (IVA 15% incluido). |
+| **P09 (Integración Real)** | *Ejecución en UI (Capa 1 y 2)* | Venta real de 2 productos en Odoo ERP con pago en efectivo y verificación contable (ver fotos arriba). |
 | **Detalle / P14** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P14"` | Consulta de orden completa por ID con todas sus líneas fiscales. |
 | **SUITE COMPLETA** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj` | **13 de 13 pruebas superadas (100% PASS)**. |
 

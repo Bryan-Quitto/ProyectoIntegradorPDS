@@ -1,12 +1,23 @@
 # Evidencia de Integración Real: Pos.Api (.NET 10) $\rightarrow$ Odoo 20 Community (JSON-2)
+## Prueba P09: Registro y Verificación en Odoo de Venta de Dos Productos y Pago en Efectivo
 **Asignatura:** Proceso de Desarrollo de Software (PDS) — Quinto Semestre  
-**Fecha de Ejecución:** 29 de Octubre de 2026  
+**Fecha de Ejecución:** 29 de Octubre de 2026 (Actualizado 4 de Noviembre de 2026)  
 **Ambiente de Ejecución:**
 - **ERP:** Odoo 20.0 Community en contenedor Docker `odoo20_web` (`http://localhost:8069`)
 - **Base de Datos Odoo:** `pos_db` (PostgreSQL 16 en contenedor `odoo20_db`)
 - **Backend POS:** ASP.NET Core (.NET 10.0) en `http://localhost:5000`
 - **Protocolo de Integración:** Odoo JSON-2 API (`POST /json/2/{model}/{method}`) con autenticación Bearer por API Key (RNF-09)
 - **Persistencia Local:** SQLite (`pos_local.db`) para control de idempotencia (RN-08) y auditoría de ventas
+- **Prueba Académica Oficial:** **P09** (Sección 15 y 16 del PDF de especificaciones)
+
+---
+
+## 📸 Evidencia Visual de Integración de Extremo a Extremo (Prueba P09)
+
+| 1. Confirmación de Cobro en Terminal React | 2. Registro y Conciliación Oficial en Odoo 20 ERP |
+| :---: | :---: |
+| ![Venta Confirmada en React](img/p09-01-react-venta-confirmada.png) | ![Orden Sincronizada en Odoo](img/p09-02-odoo-orden-sincronizada.png) |
+| *Modal de éxito: Referencia POS sincronizada, ID Odoo, total $35.00 y sesión activa.* | *Odoo POS: Orden en estado 'Pagado', 2 líneas (Prod A y B), IVA 15% ($4.57) y pago efectivo.* |
 
 ---
 

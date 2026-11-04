@@ -167,9 +167,9 @@ public class OdooJson2PosAdapter : IOdooPosGateway
         if (first is null) return null;
 
         var state = ReadString(first["state"]);
-        var userId = ReadIdList(first["user_id"]).FirstOrDefault();
+        var (userId, userName) = ReadMany2One(first["user_id"]);
 
-        return new PosSessionDto(first["id"]!.GetValue<int>(), ReadString(first["name"]), state, userId, state == "opened");
+        return new PosSessionDto(first["id"]!.GetValue<int>(), ReadString(first["name"]), state, userId, state == "opened", userName);
     }
 
     // ------------------------------------------------------------------
@@ -350,5 +350,26 @@ public class OdooJson2PosAdapter : IOdooPosGateway
                 else if (int.TryParse(v.ToString(), out var parsedId)) yield return parsedId;
             }
         }
+    }
+
+    private static (int Id, string Name) ReadMany2One(JsonNode? node)
+    {
+        if (node is JsonArray arr && arr.Count >= 2)
+        {
+            var id = 0;
+            if (arr[0] is JsonValue vId)
+            {
+                if (!vId.TryGetValue<int>(out id))
+                    int.TryParse(vId.ToString(), out id);
+            }
+            var name = arr[1] is JsonValue vName && vName.TryGetValue<string>(out var s) ? s : arr[1]?.ToString() ?? string.Empty;
+            return (id, name);
+        }
+        if (node is JsonValue v)
+        {
+            if (v.TryGetValue<int>(out var singleId)) return (singleId, string.Empty);
+            if (int.TryParse(v.ToString(), out var parsedId)) return (parsedId, string.Empty);
+        }
+        return (0, string.Empty);
     }
 }
