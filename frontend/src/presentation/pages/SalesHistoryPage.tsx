@@ -56,11 +56,19 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
   const queryFilter: SaleHistoryFilterType =
     rawFilter === 'REFERENCE' || rawFilter === 'CUSTOMER' ? rawFilter : 'ALL';
   const queryPage = Math.max(1, parseInt(searchParams.get('pagina') || searchParams.get('page') || '1', 10) || 1);
+  const queryDetail = searchParams.get('detalle') || searchParams.get('orden');
 
   const [searchTerm, setSearchTerm] = useState(querySearch);
   const [filterType, setFilterType] = useState<SaleHistoryFilterType>(queryFilter);
   const [currentPage, setCurrentPage] = useState(queryPage);
   const PAGE_SIZE = 5; // 5 órdenes por página en el historial
+
+  // Apertura automática de detalle por parámetro de URL (Deep Linking para auditoría)
+  useEffect(() => {
+    if (queryDetail) {
+      openSaleDetail(queryDetail);
+    }
+  }, [queryDetail, openSaleDetail]);
 
   // Sincronizar estado local hacia los parámetros de la URL
   useEffect(() => {
@@ -74,8 +82,11 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
     if (currentPage > 1) {
       params.pagina = String(currentPage);
     }
+    if (queryDetail) {
+      params.detalle = queryDetail;
+    }
     setSearchParams(params, { replace: true });
-  }, [searchTerm, filterType, currentPage, setSearchParams]);
+  }, [searchTerm, filterType, currentPage, queryDetail, setSearchParams]);
 
   // Reset de página al cambiar término de búsqueda o tipo de filtro
   useEffect(() => {

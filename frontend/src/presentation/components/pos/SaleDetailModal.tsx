@@ -15,6 +15,8 @@ import {
   Tag,
   Hash,
   FileCheck2,
+  Printer,
+  Lock,
 } from 'lucide-react';
 
 interface SaleDetailModalProps {
@@ -87,7 +89,13 @@ export const SaleDetailModal: React.FC<SaleDetailModalProps> = ({
           <span>Cargando detalle de la orden...</span>
         </div>
       ) : sale ? (
-        <div className="space-y-5">
+        <div className="space-y-5" id="printable-invoice">
+          {/* Cabecera exclusiva de impresión física */}
+          <div className="hidden print:block text-center border-b border-slate-300 pb-3 mb-3">
+            <h2 className="text-base font-bold uppercase tracking-wider text-slate-900">Comprobante de Venta POS</h2>
+            <p className="text-xs text-slate-600">Sistema Punto de Venta &bull; Integración Odoo 20 Community</p>
+          </div>
+
           {/* 1. Cabecera destacada de Odoo 20 y Estado */}
           <div className="bg-emerald-50/70 border border-emerald-200/80 rounded-lg p-3.5 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
@@ -315,11 +323,27 @@ export const SaleDetailModal: React.FC<SaleDetailModalProps> = ({
             </div>
           </div>
 
-          {/* Botón inferior de cerrar */}
-          <div className="pt-2 flex justify-end">
-            <Button variant="outline" onClick={onClose} className="h-9 px-5">
-              Cerrar
-            </Button>
+          {/* Botones inferiores de acción (ocultos al imprimir) */}
+          <div className="pt-2 flex items-center justify-between border-t border-slate-200/80 no-print">
+            <div className="text-[11px] text-slate-500 flex items-center gap-1 font-mono">
+              <Lock className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+              <span>Auditoría Local &bull; Orden Inmutable (RN-06)</span>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => window.print()}
+                className="h-9 px-4 gap-1.5 text-slate-700 hover:text-emerald-700 hover:bg-emerald-50 border-slate-300"
+                title="Imprimir comprobante físico de la venta"
+              >
+                <Printer className="h-4 w-4 text-emerald-600" />
+                <span>Imprimir Comprobante</span>
+              </Button>
+              <Button variant="outline" onClick={onClose} className="h-9 px-5">
+                Cerrar
+              </Button>
+            </div>
           </div>
         </div>
       ) : null}

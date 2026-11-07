@@ -445,4 +445,82 @@ public class PosTests
         result.Lines[0].ProductCode.Should().Be("PROD-001");
         result.Lines[1].ProductCode.Should().Be("PROD-002");
     }
+
+    // =========================================================================
+    // RN-06: Inmutabilidad de la Orden Confirmada y Sincronizada (Patrón State - Turno 2 Vero)
+    // =========================================================================
+    [Fact]
+    public void RN06_OrdenConfirmada_LanzaSaleOrderStateException_AlIntentarModificarLineasOPoliticas()
+    {
+        // Arrange: Crear orden y agregar un producto en estado Draft
+        var order = new SaleOrder(posSessionId: 1);
+        var productA = new Product(1, "Producto A", new Money(15.00m));
+        var productB = new Product(2, "Producto B", new Money(20.00m));
+        order.AddLine(productA, new Quantity(1));
+
+        // Act: Confirmar la orden (transición Draft -> Confirmed)
+        order.Confirm();
+        order.State.StateName.Should().Be("Confirmed");
+
+        // Assert: RN-06 Inmutabilidad estricta en ConfirmedState
+        // 1. Prohibido agregar líneas
+        var actAdd = () => order.AddLine(productB, new Quantity(2));
+        actAdd.Should().Throw<SaleOrderStateException>()
+            .WithMessage("*RN-06*");
+
+        // 2. Prohibido eliminar líneas
+        var actRemove = () => order.RemoveLine(1);
+        actRemove.Should().Throw<SaleOrderStateException>()
+            .WithMessage("*RN-06*");
+
+        // 3. Prohibido alterar políticas de descuento
+        var actDiscount = () => order.SetDiscountPolicy(new PercentageDiscountPolicy(10m));
+        actDiscount.Should().Throw<SaleOrderStateException>()
+            .WithMessage("*RN-06*");
+
+        // 4. Prohibido re-confirmar
+        var actReconfirm = () => order.Confirm();
+        actReconfirm.Should().Throw<SaleOrderStateException>()
+            .WithMessage("*ya se encuentra confirmada*");
+    }
+
+    [Fact]
+    public void RN06_OrdenSincronizadaConOdoo_LanzaSaleOrderStateException_AlIntentarModificarOReconfirmar()
+    {
+        // Arrange: Crear orden, agregar producto, confirmar y marcar como sincronizada con Odoo
+        var order = new SaleOrder(posSessionId: 1);
+        var productA = new Product(1, "Producto A", new Money(15.00m));
+        order.AddLine(productA, new Quantity(1));
+        order.Confirm();
+        order.MarkAsSynced("260-1-000005", 105);
+
+        // Act & Assert
+        order.State.StateName.Should().Be("Synced");
+        order.OdooOrderReference.Should().Be("260-1-000005");
+        order.OdooOrderId.Should().Be(105);
+
+        // 1. Prohibido agregar líneas una vez sincronizada
+        var actAdd = () => order.AddLine(productA, new Quantity(1));
+        actAdd.Should().Throw<SaleOrderStateException>()
+            .WithMessage("*RN-06*");
+
+        // 2. Prohibido eliminar líneas
+        var actRemove = () => order.RemoveLine(1);
+        actRemove.Should().Throw<SaleOrderStateException>()
+            .WithMessage("*RN-06*");
+
+        // 3. Prohibido cambiar descuentos
+        var actDiscount = () => order.SetDiscountPolicy(new NoDiscountPolicy());
+        actDiscount.Should().Throw<SaleOrderStateException>()
+            .WithMessage("*RN-06*");
+
+        // 4. Prohibido re-confirmar o re-sincronizar
+        var actConfirm = () => order.Confirm();
+        actConfirm.Should().Throw<SaleOrderStateException>()
+            .WithMessage("*ya fue sincronizada*");
+
+        var actResync = () => order.MarkAsSynced("260-1-000005", 105);
+        actResync.Should().Throw<SaleOrderStateException>()
+            .WithMessage("*ya fue sincronizada*");
+    }
 }
