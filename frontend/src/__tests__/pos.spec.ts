@@ -312,4 +312,51 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
     // '999' encuentra a Consumidor Final
     expect(filterSales('999', 'CUSTOMER')).toHaveLength(1);
   });
+
+  // =========================================================================
+  // P20: Propagación y preservación estricta de Idempotency-Key en CheckoutSaleUseCase (RN-08 / RF-16)
+  // [GUÍA ESTEBAN - FIX AUDITORÍA ELI]: Garantiza que el caso de uso respete la clave suministrada
+  // para evitar duplicar transacciones en reintentos.
+  // =========================================================================
+  it('P20: Propagación estricta de Idempotency-Key suministrada para garantizar reintentos idempotentes (RN-08)', async () => {
+    const mockGateway: IPosApiGateway = {
+      searchProducts: vi.fn(),
+      getActiveSession: vi.fn(),
+      createSale: vi.fn().mockResolvedValue({
+        orderId: 'test-order-guid',
+        posSessionId: 1,
+        customerDocument: '9999999999999',
+        customerName: 'Consumidor Final',
+        subTotal: 10,
+        discountAmount: 0,
+        taxAmount: 1.5,
+        totalAmount: 11.5,
+        state: 'Synced',
+        odooOrderReference: '260-1-000005',
+        odooOrderId: 5,
+        createdAtUtc: new Date().toISOString(),
+        lines: [],
+      }),
+      getSalesHistory: vi.fn(),
+      getSaleById: vi.fn(),
+    };
+
+    const cart = new Cart();
+    cart.addItem({ id: 1, name: 'Prod 1', price: 10, barcode: '111', availableQuantity: 5 }, 1);
+    const useCase = new CheckoutSaleUseCase(mockGateway);
+
+    const specificKey = 'esteban-idempotency-test-uuid-1234';
+    const result = await useCase.execute({
+      cart,
+      posSessionId: 1,
+      idempotencyKey: specificKey,
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockGateway.createSale).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: specificKey,
+      })
+    );
+  });
 });
