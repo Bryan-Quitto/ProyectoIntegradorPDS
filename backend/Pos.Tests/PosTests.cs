@@ -302,6 +302,86 @@ public class PosTests
     }
 
     // =========================================================================
+    // P10 (Turno 3 - Esteban): Extensibilidad de Métodos de Pago (Principio Abierto/Cerrado - OCP)
+    // [GUÍA ESTEBAN - TURNO 3 - RF-10 / P10 / SOLID]:
+    // Demuestra matemáticamente que se puede registrar e inyectar un nuevo procesador de pago
+    // (ej. Bitcoin Lightning) sin modificar una sola línea de código en 'CreateSaleUseCase'.
+    // =========================================================================
+    [Fact]
+    public async Task P10_ExtensibilidadMetodosPago_PermiteNuevaEstrategiaSinModificarCasoDeUso()
+    {
+        // Arrange
+        var odooGateway = Substitute.For<IOdooPosGateway>();
+        var idempotencyStore = Substitute.For<IIdempotencyStore>();
+        var historyRepo = Substitute.For<ISaleHistoryRepository>();
+
+        odooGateway.GetActiveSessionAsync(Arg.Any<CancellationToken>())
+            .Returns(new PosSessionDto(1, "Main POS", "opened", 2, IsOpen: true));
+
+        odooGateway.GetProductsByIdsAsync(Arg.Any<IReadOnlyCollection<int>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ProductDto>
+            {
+                new(1, "Teclado Mecánico", 50.00m, "TEC-01", 10m)
+            });
+
+        odooGateway.SyncSaleOrderAsync(Arg.Any<SaleOrder>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new OdooSyncResultDto(true, "POS/2026/00100", 100, null));
+
+        // Inyectamos una estrategia personalizada que no existía en el diseño original: Cripto / Bitcoin
+        var customCryptoProcessor = new MockCustomCryptoPaymentProcessor();
+        var processors = new IPaymentProcessor[]
+        {
+            new CashPaymentProcessor(odooGateway),
+            customCryptoProcessor
+        };
+
+        var useCase = new CreateSaleUseCase(odooGateway, idempotencyStore, historyRepo, processors);
+        var command = new CreateSaleCommand(
+            IdempotencyKey: "esteban-p10-crypto-key",
+            PosSessionId: 1,
+            CustomerDocument: "1712345678",
+            CustomerName: "Esteban Villalba",
+            DiscountType: "NONE",
+            DiscountValue: 0m,
+            Items: new List<CreateSaleItemDto> { new(1, 1) },
+            PaymentMethod: "CRYPTO_BTC"
+        );
+
+        // Act
+        var result = await useCase.ExecuteAsync(command);
+
+        // Assert: Se procesó mediante la nueva estrategia sin alterar el caso de uso
+        result.Should().NotBeNull();
+        result.PaymentMethod.Should().Be("Bitcoin Lightning");
+        result.OdooOrderReference.Should().Be("POS/2026/00100");
+        customCryptoProcessor.WasExecuted.Should().BeTrue();
+    }
+
+    private sealed class MockCustomCryptoPaymentProcessor : IPaymentProcessor
+    {
+        public bool WasExecuted { get; private set; }
+        public string MethodName => "Bitcoin Lightning";
+
+        public bool CanHandle(string paymentMethod) =>
+            string.Equals(paymentMethod, "CRYPTO_BTC", StringComparison.OrdinalIgnoreCase);
+
+        public Task<PaymentProcessingResult> ProcessPaymentAsync(
+            SaleOrder saleOrder,
+            int posSessionId,
+            CancellationToken cancellationToken = default)
+        {
+            WasExecuted = true;
+            return Task.FromResult(new PaymentProcessingResult(
+                Success: true,
+                MethodName: "Bitcoin Lightning",
+                AmountPaid: saleOrder.TotalAmount,
+                ResolvedOdooMethodId: 999,
+                TransactionReference: "BTC-TX-883921"
+            ));
+        }
+    }
+
+    // =========================================================================
     // P11 y P12: Autenticación Desacoplada vía Caso de Uso (ARQ-01 / ARQ-02)
     // =========================================================================
     [Fact]
