@@ -434,6 +434,103 @@ public class PosTests
     }
 
     // =========================================================================
+    // P09 (Turno 4 - Bryan): Venta Real de 2 Productos y Pago en Efectivo (Anexo F)
+    // [GUÍA BRYAN - TURNO 4 - QA / ANEXO F / INTEGRACIÓN ATÓMICA SIN PARCHES]:
+    // Demuestra que la solución en .NET ejecuta la venta atómica y transaccional
+    // de 2 productos ($15 + $20 = $35) en efectivo, con IVA 15% ($4.57) y conciliación
+    // directa en Odoo ERP 20 vía pos.order.sync_from_ui sin parches manuales 'write'.
+    // =========================================================================
+    [Fact]
+    public async Task P09_VentaDosProductosPagoEfectivo_ConciliadaSinParchesManuales_AnexoF()
+    {
+        // Arrange
+        var odooGateway = Substitute.For<IOdooPosGateway>();
+        var idempotencyStore = Substitute.For<IIdempotencyStore>();
+        var historyRepo = Substitute.For<ISaleHistoryRepository>();
+
+        const int sessionId = 4;
+        var idempotencyKey = Guid.NewGuid().ToString();
+
+        odooGateway.GetActiveSessionAsync(Arg.Any<CancellationToken>())
+            .Returns(new PosSessionDto(sessionId, "My Company/00002", "opened", 2, IsOpen: true));
+
+        // Productos configurados exactamente como en Anexo F:
+        // Producto A (ID 3, $15.00, IVA 15% incl.)
+        // Producto B (ID 4, $20.00, IVA 15% incl.)
+        odooGateway.GetProductsByIdsAsync(Arg.Any<IReadOnlyCollection<int>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ProductDto>
+            {
+                new(3, "Producto A", 15.00m, "", 100m, "PROD-001", TaxRate: 0.15m, PriceIncludesTax: true, TaxIds: new[] { 1 }),
+                new(4, "Producto B", 20.00m, "", 100m, "PROD-002", TaxRate: 0.15m, PriceIncludesTax: true, TaxIds: new[] { 1 })
+            });
+
+        odooGateway.ResolvePaymentMethodIdAsync(sessionId, "cash", Arg.Any<CancellationToken>())
+            .Returns(1); // Método ID 1: Efectivo
+
+        SaleOrder? orderSentToOdoo = null;
+        string? stateWhenSent = null;
+        int resolvedMethodReceived = 0;
+
+        odooGateway.SyncSaleOrderAsync(Arg.Any<SaleOrder>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                orderSentToOdoo = ci.Arg<SaleOrder>();
+                resolvedMethodReceived = ci.Arg<int>();
+                stateWhenSent = orderSentToOdoo.State.StateName;
+                return new OdooSyncResultDto(true, "260-1-000003", 5, null);
+            });
+
+        var useCase = new CreateSaleUseCase(
+            odooGateway,
+            idempotencyStore,
+            historyRepo,
+            new IPaymentProcessor[] { new CashPaymentProcessor(odooGateway) });
+
+        var command = new CreateSaleCommand(
+            IdempotencyKey: idempotencyKey,
+            PosSessionId: sessionId,
+            CustomerDocument: "1712345678",
+            CustomerName: "Juan Perez",
+            DiscountType: "NONE",
+            DiscountValue: 0m,
+            Items: new List<CreateSaleItemDto> { new(3, 1), new(4, 1) },
+            PaymentMethod: "Efectivo"
+        );
+
+        // Act
+        var result = await useCase.ExecuteAsync(command);
+
+        // Assert - Anexo F Valores Exactos:
+        // Subtotal = $35.00 (Prod A $15.00 + Prod B $20.00)
+        // Descuento = $0.00
+        // Base Imponible (NetSubTotal) = $30.43 ($13.04 + $17.39)
+        // IVA 15% (TaxAmount) = $4.57 ($1.96 + $2.61)
+        // Total = $35.00
+        // Pago = $35.00
+        result.SubTotal.Should().Be(35.00m);
+        result.DiscountAmount.Should().Be(0.00m);
+        result.TaxAmount.Should().Be(4.57m);
+        result.TotalAmount.Should().Be(35.00m);
+        result.AmountPaid.Should().Be(35.00m);
+        result.PaymentMethod.Should().Be("Efectivo");
+        resolvedMethodReceived.Should().Be(1);
+
+        // Assert - Trazabilidad y Estado Odoo
+        result.State.Should().Be("Synced");
+        result.OdooOrderId.Should().Be(5);
+        result.OdooOrderReference.Should().Be("260-1-000003");
+
+        // Assert - Inmutabilidad y Transacción Atómica
+        stateWhenSent.Should().Be("Confirmed");
+        orderSentToOdoo!.State.StateName.Should().Be("Synced");
+        orderSentToOdoo.NetSubTotal.Should().Be(30.43m);
+
+        // Assert - Persistencia Local (SQLite)
+        await idempotencyStore.Received(1).SaveKeyAsync(idempotencyKey, result.OrderId, Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await historyRepo.Received(1).SaveSaleAsync(Arg.Is<SaleOrderResponseDto>(s => s.OrderId == result.OrderId), Arg.Any<CancellationToken>());
+    }
+
+    // =========================================================================
     // P13: Happy path - venta en efectivo de 2 productos (Sección 13)
     // Replica la configuración REAL de Odoo 20 local: PROD-001 ($15) y PROD-002 ($20)
     // con impuesto "VAT 15% G" (id 1) INCLUIDO en el precio.

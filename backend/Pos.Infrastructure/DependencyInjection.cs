@@ -63,7 +63,7 @@ public static class DependencyInjection
         // 4. Gateways & Repositories
         services.AddHttpClient<IOdooPosGateway, OdooJson2PosAdapter>((sp, client) =>
         {
-            client.Timeout = TimeSpan.FromSeconds(15);
+            client.Timeout = TimeSpan.FromSeconds(60);
         });
 
         services.AddScoped<IIdempotencyStore, SqliteIdempotencyStore>();
