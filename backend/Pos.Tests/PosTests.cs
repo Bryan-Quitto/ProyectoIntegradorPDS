@@ -224,6 +224,44 @@ public class PosTests
     }
 
     // =========================================================================
+    // RF-08 / RN-04: Rechazo de política de descuento no autorizada con mensaje claro
+    // [GUÍA ESTEBAN - FIX AUDITORÍA ELI/VERO]: Antes caía silenciosamente a NoDiscountPolicy
+    // ocultando peticiones maliciosas o tipos no soportados.
+    // =========================================================================
+    [Theory]
+    [InlineData("HACK_DISCOUNT")]
+    [InlineData("VIP_ILLEGAL")]
+    [InlineData("DESCUENTO_MAGICO")]
+    public async Task RF08_PoliticaDescuentoNoAutorizada_LanzaDomainValidationException(string unauthorizedType)
+    {
+        // Arrange
+        var odooGateway = Substitute.For<IOdooPosGateway>();
+        var idempotencyStore = Substitute.For<IIdempotencyStore>();
+        var historyRepo = Substitute.For<ISaleHistoryRepository>();
+
+        odooGateway.GetActiveSessionAsync(Arg.Any<CancellationToken>())
+            .Returns(new PosSessionDto(1, "Main POS", "opened", 2, IsOpen: true));
+
+        var useCase = new CreateSaleUseCase(odooGateway, idempotencyStore, historyRepo);
+        var command = new CreateSaleCommand(
+            IdempotencyKey: "key-rf08",
+            PosSessionId: 1,
+            CustomerDocument: "1712345678",
+            CustomerName: "Juan Perez",
+            DiscountType: unauthorizedType,
+            DiscountValue: 10m,
+            Items: new List<CreateSaleItemDto> { new(1, 1) }
+        );
+
+        // Act
+        var act = () => useCase.ExecuteAsync(command);
+
+        // Assert
+        await act.Should().ThrowAsync<DomainValidationException>()
+            .WithMessage("*no está autorizada*");
+    }
+
+    // =========================================================================
     // P10: Extensibilidad de Política de Descuento (Open/Closed Principle)
     // =========================================================================
     [Fact]

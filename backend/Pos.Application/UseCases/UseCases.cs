@@ -86,12 +86,21 @@ public class CreateSaleUseCase
             throw new DomainValidationException(nameof(command.Items), "No se puede registrar una venta sin productos (RN-01).");
         }
 
-        // 4. Estrategia de descuento
-        IDiscountPolicy discountPolicy = command.DiscountType?.ToUpperInvariant() switch
+        // [GUÍA ESTEBAN - FIX AUDITORÍA ELI/VERO - RF-08 / RN-04]:
+        // Resolución estricta de la estrategia de descuento (Strategy GoF).
+        // Error detectado en el código previo de Eli y Vero:
+        // Usaban un comodín silencioso '_ => new NoDiscountPolicy()' que ocultaba cualquier tipo
+        // de descuento inválido, arbitrario o inyectado maliciosamente.
+        // La especificación RF-08 exige explícitamente: "Rechazar descuentos no autorizados con mensajes claros".
+        var normalizedDiscountType = (command.DiscountType ?? "NONE").Trim().ToUpperInvariant();
+        IDiscountPolicy discountPolicy = normalizedDiscountType switch
         {
+            "NONE" or "" => new NoDiscountPolicy(),
             "PERCENTAGE" => new PercentageDiscountPolicy(command.DiscountValue),
             "THRESHOLD_FIXED" => new ThresholdFixedDiscountPolicy(50m, command.DiscountValue > 0 ? command.DiscountValue : 5m),
-            _ => new NoDiscountPolicy()
+            _ => throw new DomainValidationException(
+                nameof(command.DiscountType),
+                $"La política de descuento '{command.DiscountType}' no está autorizada por el sistema (RF-08 / RN-04).")
         };
 
         var order = new SaleOrder(
