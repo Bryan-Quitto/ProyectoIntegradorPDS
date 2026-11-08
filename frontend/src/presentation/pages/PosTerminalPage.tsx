@@ -55,6 +55,22 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
     return await checkout(rawCart, activeSession.id, customerDoc, customerName);
   };
 
+  // [GUÍA ESTEBAN - FIX AUDITORÍA VERO/ELI - RN-06]:
+  // Si la última venta fue confirmada exitosamente en Odoo (lastResult?.success),
+  // cerrar el modal por cualquier vía (tecla Escape, clic en backdrop o botón cerrar)
+  // DEBE limpiar irrevocablemente el carrito (clearCart) y refrescar el catálogo (refresh).
+  // Error detectado en el código previo de Vero/Eli:
+  // Solo se limpiaba el carrito en 'handleSuccessDone'. Si el usuario cerraba el diálogo
+  // con la 'X' o haciendo clic afuera, el carrito quedaba lleno con los productos ya pagados,
+  // permitiendo cobrar la misma orden una segunda vez.
+  const handleClosePaymentModal = () => {
+    if (lastResult?.success) {
+      clearCart();
+      refresh();
+    }
+    setPaymentModalOpen(false);
+  };
+
   const handleSuccessDone = () => {
     clearCart();
     setPaymentModalOpen(false);
@@ -150,7 +166,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
       {/* Modal de Finalización y Cobro */}
       <PaymentModal
         isOpen={paymentModalOpen}
-        onClose={() => setPaymentModalOpen(false)}
+        onClose={handleClosePaymentModal}
         total={total}
         onConfirmPayment={handleConfirmPayment}
         processing={processing}
