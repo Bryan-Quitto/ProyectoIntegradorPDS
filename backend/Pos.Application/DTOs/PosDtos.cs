@@ -38,7 +38,8 @@ public record CreateSaleCommand(
     string CustomerName,
     string DiscountType,
     decimal DiscountValue,
-    List<CreateSaleItemDto> Items
+    List<CreateSaleItemDto> Items,
+    string PaymentMethod = "Efectivo"
 );
 
 public record SaleOrderLineDto(

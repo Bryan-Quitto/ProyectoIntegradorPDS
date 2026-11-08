@@ -71,6 +71,11 @@ public static class DependencyInjection
         services.AddScoped<IOperatorRepository, SqliteOperatorRepository>();
         services.AddSingleton<IJwtProvider, JwtService>();
 
+        // [GUÍA ESTEBAN - TURNO 3 - RF-10 / PATRÓN STRATEGY / OCP]:
+        // Registro de los procesadores de pago extensibles.
+        services.AddScoped<IPaymentProcessor, CashPaymentProcessor>();
+        services.AddScoped<IPaymentProcessor, BankTransferPaymentProcessor>();
+
         // 5. Application Use Cases
         services.AddScoped<LoginOperatorUseCase>();
         services.AddScoped<SearchProductsUseCase>();

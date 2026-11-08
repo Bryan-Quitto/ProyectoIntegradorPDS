@@ -44,15 +44,31 @@ public class CreateSaleUseCase
     private readonly IOdooPosGateway _odooGateway;
     private readonly IIdempotencyStore _idempotencyStore;
     private readonly ISaleHistoryRepository _historyRepository;
+    private readonly IReadOnlyList<IPaymentProcessor> _paymentProcessors;
 
     public CreateSaleUseCase(
         IOdooPosGateway odooGateway,
         IIdempotencyStore idempotencyStore,
         ISaleHistoryRepository historyRepository)
+        : this(odooGateway, idempotencyStore, historyRepository, new IPaymentProcessor[] { new CashPaymentProcessor(odooGateway) })
+    {
+    }
+
+    /// <summary>
+    /// [GUÍA ESTEBAN - TURNO 3 - RF-10 / OCP]:
+    /// Inyección de dependencias de procesadores de pago polimórficos.
+    /// Permite extender nuevos métodos de pago sin modificar este caso de uso.
+    /// </summary>
+    public CreateSaleUseCase(
+        IOdooPosGateway odooGateway,
+        IIdempotencyStore idempotencyStore,
+        ISaleHistoryRepository historyRepository,
+        IEnumerable<IPaymentProcessor> paymentProcessors)
     {
         _odooGateway = odooGateway;
         _idempotencyStore = idempotencyStore;
         _historyRepository = historyRepository;
+        _paymentProcessors = paymentProcessors.ToList().AsReadOnly();
     }
 
     public async Task<SaleOrderResponseDto> ExecuteAsync(CreateSaleCommand command, CancellationToken cancellationToken = default)
@@ -137,18 +153,33 @@ public class CreateSaleUseCase
         // 6. Confirmación de la orden (transición de estado y congelación RN-06)
         order.Confirm();
 
-        // 7. Sincronización hacia Odoo 20 JSON-2
-        var syncResult = await _odooGateway.SyncSaleOrderAsync(order, cancellationToken);
+        // [GUÍA ESTEBAN - TURNO 3 - RF-10 / PATRÓN STRATEGY / OCP]:
+        // 7. Resolución de la estrategia de pago mediante el procesador polimórfico
+        var requestedMethod = string.IsNullOrWhiteSpace(command.PaymentMethod) ? "Efectivo" : command.PaymentMethod.Trim();
+        var paymentProcessor = _paymentProcessors.FirstOrDefault(p => p.CanHandle(requestedMethod))
+            ?? _paymentProcessors.FirstOrDefault(p => p.CanHandle("Efectivo"))
+            ?? throw new ApplicationValidationException(nameof(command.PaymentMethod), $"Método de pago '{requestedMethod}' no soportado (RF-10).");
+
+        var paymentResult = await paymentProcessor.ProcessPaymentAsync(order, command.PosSessionId, cancellationToken);
+        if (!paymentResult.Success)
+        {
+            throw new ApplicationValidationException(nameof(command.PaymentMethod), paymentResult.ErrorMessage ?? "Error procesando el método de pago.");
+        }
+
+        // 8. Sincronización hacia Odoo 20 JSON-2 asociando el método resuelto
+        var syncResult = paymentResult.ResolvedOdooMethodId > 0
+            ? await _odooGateway.SyncSaleOrderAsync(order, paymentResult.ResolvedOdooMethodId, cancellationToken)
+            : await _odooGateway.SyncSaleOrderAsync(order, cancellationToken);
         if (!syncResult.Success)
         {
             // RN-07: Prohibido declarar falsos éxitos si falla Odoo
             throw new OdooCommunicationException($"Error sincronizando la orden con Odoo: {syncResult.ErrorMessage}");
         }
 
-        // 8. Marcar como sincronizada
+        // 9. Marcar como sincronizada
         order.MarkAsSynced(syncResult.OdooReference, syncResult.OdooOrderId);
 
-        // 9. Construir DTO de respuesta
+        // 10. Construir DTO de respuesta con el método y monto real procesado
         var responseDto = new SaleOrderResponseDto(
             order.Id,
             order.PosSessionId,
@@ -179,8 +210,8 @@ public class CreateSaleUseCase
                     TotalWithTax: fiscal.TotalWithTax);
             }).ToList(),
             DiscountPolicyName: order.DiscountPolicy.PolicyName,
-            PaymentMethod: "Efectivo",
-            AmountPaid: order.TotalAmount,
+            PaymentMethod: paymentResult.MethodName,
+            AmountPaid: paymentResult.AmountPaid,
             SessionName: activeSession?.Name ?? $"Sesión #{order.PosSessionId}",
             OperatorName: !string.IsNullOrWhiteSpace(activeSession?.UserName) ? activeSession.UserName : "Cajero POS"
         );

@@ -15,7 +15,7 @@ public class OdooPosOrderPayloadBuilder
     private decimal _amountTax;
     private decimal _amountTotal;
     private DateTime _dateOrderUtc = DateTime.UtcNow;
-    private int? _cashPaymentMethodId;
+    private int? _paymentMethodId;
     private readonly List<Dictionary<string, object>> _lines = new();
 
     public OdooPosOrderPayloadBuilder WithUuid(Guid uuid)
@@ -43,11 +43,20 @@ public class OdooPosOrderPayloadBuilder
         return this;
     }
 
-    /// <summary>Pago único en efectivo por el total de la orden (alcance de la prueba temprana).</summary>
+    /// <summary>
+    /// [GUÍA ESTEBAN - TURNO 3 - RF-10]:
+    /// Asocia dinámicamente cualquier método de pago resuelto (Efectivo, Banco, etc.)
+    /// </summary>
+    public OdooPosOrderPayloadBuilder WithPayment(int paymentMethodId)
+    {
+        _paymentMethodId = paymentMethodId;
+        return this;
+    }
+
+    /// <summary>Compatibilidad hacia atrás con pruebas existentes.</summary>
     public OdooPosOrderPayloadBuilder WithCashPayment(int paymentMethodId)
     {
-        _cashPaymentMethodId = paymentMethodId;
-        return this;
+        return WithPayment(paymentMethodId);
     }
 
     public OdooPosOrderPayloadBuilder AddLine(
@@ -107,8 +116,8 @@ public class OdooPosOrderPayloadBuilder
             throw new InvalidOperationException("El payload de Odoo requiere un session_id válido.");
         if (_lines.Count == 0)
             throw new InvalidOperationException("El payload de Odoo requiere al menos una línea.");
-        if (_cashPaymentMethodId is null)
-            throw new InvalidOperationException("El payload de Odoo requiere un método de pago (WithCashPayment).");
+        if (_paymentMethodId is null)
+            throw new InvalidOperationException("El payload de Odoo requiere un método de pago resuelto.");
 
         var date = _dateOrderUtc.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
@@ -131,7 +140,7 @@ public class OdooPosOrderPayloadBuilder
                     0, 0, new Dictionary<string, object>
                     {
                         ["amount"] = _amountTotal,
-                        ["payment_method_id"] = _cashPaymentMethodId.Value,
+                        ["payment_method_id"] = _paymentMethodId.Value,
                         ["payment_date"] = date
                     }
                 }

@@ -178,13 +178,21 @@ public class OdooJson2PosAdapter : IOdooPosGateway
 
     public async Task<OdooSyncResultDto> SyncSaleOrderAsync(SaleOrder saleOrder, CancellationToken cancellationToken = default)
     {
+        var cashMethodId = await ResolveCashPaymentMethodIdAsync(saleOrder.PosSessionId, cancellationToken);
+        return await SyncSaleOrderAsync(saleOrder, cashMethodId, cancellationToken);
+    }
+
+    /// <summary>
+    /// [GUÍA ESTEBAN - TURNO 3 - RF-10]:
+    /// Sobrecarga que permite sincronizar la venta con cualquier método de pago resuelto polimórficamente (Strategy).
+    /// </summary>
+    public async Task<OdooSyncResultDto> SyncSaleOrderAsync(SaleOrder saleOrder, int paymentMethodId, CancellationToken cancellationToken = default)
+    {
         try
         {
-            var cashMethodId = await ResolveCashPaymentMethodIdAsync(saleOrder.PosSessionId, cancellationToken);
-
             var orderPayload = new OdooPosOrderPayloadBuilder()
                 .FromSaleOrder(saleOrder)
-                .WithCashPayment(cashMethodId)
+                .WithPayment(paymentMethodId)
                 .Build();
 
             var result = await CallAsync("pos.order", "sync_from_ui", new
@@ -224,6 +232,57 @@ public class OdooJson2PosAdapter : IOdooPosGateway
             _logger.LogError(ex, "Excepción inesperada sincronizando la orden {OrderId}.", saleOrder.Id);
             return new OdooSyncResultDto(false, string.Empty, 0, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// [GUÍA ESTEBAN - TURNO 3 - RF-10]:
+    /// Resuelve dinámicamente el ID del método de pago solicitado en el POS de Odoo.
+    /// </summary>
+    public async Task<int> ResolvePaymentMethodIdAsync(int sessionId, string paymentMethodType, CancellationToken ct = default)
+    {
+        if (string.Equals(paymentMethodType, "bank", StringComparison.OrdinalIgnoreCase))
+        {
+            return await ResolveBankPaymentMethodIdAsync(sessionId, ct);
+        }
+        return await ResolveCashPaymentMethodIdAsync(sessionId, ct);
+    }
+
+    private async Task<int> ResolveBankPaymentMethodIdAsync(int sessionId, CancellationToken ct)
+    {
+        var session = await CallAsync("pos.session", "search_read", new
+        {
+            domain = new object[] { new object[] { "id", "=", sessionId } },
+            fields = new[] { "id", "config_id" },
+            limit = 1
+        }, ct);
+
+        var first = session?.AsArray().FirstOrDefault();
+        var configNode = first?["config_id"];
+        var configId = ReadIdList(configNode).FirstOrDefault();
+        if (configId <= 0 && configNode is JsonValue val && val.TryGetValue<int>(out var singleId))
+        {
+            configId = singleId;
+        }
+
+        var methods = await CallAsync("pos.payment.method", "search_read", new
+        {
+            domain = new object[]
+            {
+                new object[] { "type", "=", "bank" },
+                new object[] { "config_ids", "in", new[] { configId } }
+            },
+            fields = new[] { "id", "name" },
+            limit = 1
+        }, ct);
+
+        var method = methods?.AsArray().FirstOrDefault();
+        if (method != null)
+        {
+            return method["id"]!.GetValue<int>();
+        }
+
+        // Si no hay método 'bank' configurado en la sesión, fallback a efectivo
+        return await ResolveCashPaymentMethodIdAsync(sessionId, ct);
     }
 
     /// <summary>Resuelve dinámicamente el método de pago en efectivo configurado en el POS de la sesión.</summary>
