@@ -44,7 +44,8 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
 
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
 
-  const handleConfirmPayment = async (customerDoc: string, customerName: string) => {
+  // [GUÍA ESTEBAN - TURNO 3 - RF-10]: Recepción y propagación del método de pago seleccionado
+  const handleConfirmPayment = async (customerDoc: string, customerName: string, paymentMethod: string) => {
     if (!activeSession) {
       return {
         success: false,
@@ -52,7 +53,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
       };
     }
 
-    return await checkout(rawCart, activeSession.id, customerDoc, customerName);
+    return await checkout(rawCart, activeSession.id, customerDoc, customerName, paymentMethod);
   };
 
   // [GUÍA ESTEBAN - FIX AUDITORÍA VERO/ELI - RN-06]:

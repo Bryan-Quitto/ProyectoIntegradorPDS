@@ -359,4 +359,51 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
       })
     );
   });
+
+  // =========================================================================
+  // P21: Selección y propagación dinámica del método de pago en CheckoutSaleUseCase (RF-10)
+  // [GUÍA ESTEBAN - TURNO 3 - RF-10]: Permite seleccionar Efectivo, Transferencia o Tarjeta
+  // =========================================================================
+  it('P21: CheckoutSaleUseCase propaga el método de pago seleccionado al Gateway de Odoo (RF-10)', async () => {
+    const mockGateway: IPosApiGateway = {
+      searchProducts: vi.fn(),
+      getActiveSession: vi.fn(),
+      createSale: vi.fn().mockResolvedValue({
+        orderId: 'test-order-guid',
+        posSessionId: 1,
+        customerDocument: '9999999999999',
+        customerName: 'Consumidor Final',
+        subTotal: 30.43,
+        discountAmount: 0,
+        taxAmount: 4.57,
+        totalAmount: 35.0,
+        paymentMethod: 'Transferencia',
+        amountPaid: 35.0,
+        state: 'Synced',
+        odooOrderReference: '260-1-000010',
+        odooOrderId: 10,
+        createdAtUtc: new Date().toISOString(),
+        lines: [],
+      }),
+      getSalesHistory: vi.fn(),
+      getSaleById: vi.fn(),
+    };
+
+    const cart = new Cart();
+    cart.addItem({ id: 1, name: 'Prod A', price: 15, barcode: '001', availableQuantity: 5 }, 1);
+    const useCase = new CheckoutSaleUseCase(mockGateway);
+
+    const result = await useCase.execute({
+      cart,
+      posSessionId: 1,
+      paymentMethod: 'Transferencia',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockGateway.createSale).toHaveBeenCalledWith(
+      expect.objectContaining({
+        paymentMethod: 'Transferencia',
+      })
+    );
+  });
 });

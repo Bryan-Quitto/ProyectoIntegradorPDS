@@ -76,6 +76,8 @@ export interface CheckoutInput {
   customerDocument?: string;
   customerName?: string;
   idempotencyKey?: string;
+  // [GUÍA ESTEBAN - TURNO 3 - RF-10]: Método de pago dinámico
+  paymentMethod?: string;
 }
 
 export interface CheckoutResult {
@@ -92,7 +94,7 @@ export class CheckoutSaleUseCase {
   }
 
   public async execute(input: CheckoutInput): Promise<CheckoutResult> {
-    const { cart, posSessionId, customerDocument, customerName, idempotencyKey } = input;
+    const { cart, posSessionId, customerDocument, customerName, idempotencyKey, paymentMethod } = input;
 
     // 1. RN-01: Rechazar venta sin productos
     if (cart.items.length === 0) {
@@ -128,6 +130,7 @@ export class CheckoutSaleUseCase {
         productId: i.productId,
         quantity: i.quantity,
       })),
+      paymentMethod: paymentMethod || 'Efectivo',
     };
 
     try {

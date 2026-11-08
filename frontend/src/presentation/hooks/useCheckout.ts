@@ -23,7 +23,8 @@ export function useCheckout() {
       cart: Cart,
       posSessionId: number,
       customerDocument?: string,
-      customerName?: string
+      customerName?: string,
+      paymentMethod?: string
     ): Promise<CheckoutResult> => {
       setProcessing(true);
       setLastResult(null);
@@ -42,6 +43,7 @@ export function useCheckout() {
           posSessionId,
           customerDocument,
           customerName,
+          paymentMethod,
           idempotencyKey: activeIdempotencyKeyRef.current,
         });
 

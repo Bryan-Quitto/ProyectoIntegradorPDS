@@ -17,6 +17,8 @@ export interface CreateSaleRequest {
   discountType: string;
   discountValue: number;
   items: { productId: number; quantity: number }[];
+  // [GUÍA ESTEBAN - TURNO 3 - RF-10]: Método de pago dinámico
+  paymentMethod?: string;
 }
 
 export interface SaleOrderLineDetail {

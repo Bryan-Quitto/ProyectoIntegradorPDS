@@ -21,7 +21,7 @@ interface PaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   total: number;
-  onConfirmPayment: (customerDoc: string, customerName: string) => Promise<CheckoutResult>;
+  onConfirmPayment: (customerDoc: string, customerName: string, paymentMethod: string) => Promise<CheckoutResult>;
   processing: boolean;
   lastResult: CheckoutResult | null;
   onSuccessDone: () => void;
@@ -39,6 +39,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [customerDoc, setCustomerDoc] = useState('9999999999999');
   const [customerName, setCustomerName] = useState('Consumidor Final');
   const [idError, setIdError] = useState<string | null>(null);
+
+  // [GUÍA ESTEBAN - TURNO 3 - RF-10 / SELECTOR DE MÉTODOS DE PAGO]:
+  // Soporta Efectivo (por defecto), Transferencia Bancaria y Tarjeta
+  const [paymentMethod, setPaymentMethod] = useState<'Efectivo' | 'Transferencia' | 'Tarjeta'>('Efectivo');
 
   const handleDocChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.trim();
@@ -62,7 +66,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       }
     }
 
-    await onConfirmPayment(customerDoc, customerName);
+    await onConfirmPayment(customerDoc, customerName, paymentMethod);
   };
 
   return (
@@ -267,6 +271,51 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 onChange={(e) => setCustomerName(e.target.value)}
                 placeholder="Ej. Juan Pérez"
               />
+            </div>
+
+            {/* [GUÍA ESTEBAN - TURNO 3 - RF-10 / SELECTOR DE MÉTODOS DE PAGO]: */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1">
+                <CreditCard className="h-3.5 w-3.5 text-emerald-600" /> Método de Pago (RF-10)
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('Efectivo')}
+                  className={`p-2 rounded-xl border text-center transition-all ${
+                    paymentMethod === 'Efectivo'
+                      ? 'border-emerald-600 bg-emerald-50 text-emerald-800 font-bold shadow-sm ring-1 ring-emerald-500'
+                      : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-600'
+                  }`}
+                >
+                  <div className="text-xs font-semibold">💵 Efectivo</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Caja POS</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('Transferencia')}
+                  className={`p-2 rounded-xl border text-center transition-all ${
+                    paymentMethod === 'Transferencia'
+                      ? 'border-emerald-600 bg-emerald-50 text-emerald-800 font-bold shadow-sm ring-1 ring-emerald-500'
+                      : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-600'
+                  }`}
+                >
+                  <div className="text-xs font-semibold">🏦 Transfer.</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Banco Odoo</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('Tarjeta')}
+                  className={`p-2 rounded-xl border text-center transition-all ${
+                    paymentMethod === 'Tarjeta'
+                      ? 'border-emerald-600 bg-emerald-50 text-emerald-800 font-bold shadow-sm ring-1 ring-emerald-500'
+                      : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-600'
+                  }`}
+                >
+                  <div className="text-xs font-semibold">💳 Tarjeta</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Datáfono POS</div>
+                </button>
+              </div>
             </div>
 
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
