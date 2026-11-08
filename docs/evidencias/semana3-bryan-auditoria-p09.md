@@ -1,6 +1,6 @@
 # 📄 INFORME DE EVIDENCIAS — SEMANA 3 (TURNO 4: BRYAN)
 ## Módulo: Lead QA, Integración E2E en Odoo 20 (Anexo F), Consolidación de README y Cierre
-**Responsable:** Bryan Quitto (Turno 4 - Domingo 15:00 a 21:00)  
+**Responsable:** Bryan Lopez (Turno 4 - Domingo 15:00 a 21:00)  
 **Asignatura:** Patrones de Software — Quinto Semestre  
 **Requisitos Oficiales Cubiertos:** RF-11, RF-12, RF-14, CA-03, CA-05 | RN-01 a RN-08 | RNF-01 a RNF-12  
 **Prueba Oficial a Cargo:** **P09 (Integración Real E2E contra Odoo ERP 20 Community - Anexo F)**
@@ -105,5 +105,5 @@ cd frontend; npm run test
 > **CERTIFICACIÓN DE CALIDAD:**  
 > Tras la revisión exhaustiva de los módulos de resiliencia (Eli), inmutabilidad e historial (Vero), extensibilidad SOLID (Esteban) y la integración atómica contra Odoo 20 (Bryan), se certifica que la solución cumple al **100% con los Requisitos Funcionales (RF-01 a RF-17)**, las **Reglas de Negocio (RN-01 a RN-08)** y los **Criterios de Aceptación (CA-01 a CA-05)** establecidos para la Semana 3.
 > 
-> **Firma:** Bryan Quitto — Lead QA & Integración Odoo 20 Community  
+> **Firma:** Bryan Lopez — Lead QA & Integración Odoo 20 Community  
 > **Fecha:** Domingo, 8 de Noviembre de 2026

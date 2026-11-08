@@ -2,12 +2,13 @@
 **Asignatura:** Patrones de Software — Quinto Semestre  
 **Tecnologías:** Backend ASP.NET Core (.NET 10 / C#) | Frontend React 18 + TypeScript + Vite | ERP Odoo 20.0 Community (Docker)  
 **Patrón Arquitectónico:** Clean Architecture (Hexagonal / Ports & Adapters)  
+**Estado de Entrega:** **Semana 3 Completada y Auditada al 100% (Lead QA: Bryan Lopez)**
 
 ---
 
 ## 1. Estado del Proyecto y Matriz de Requisitos Funcionales (RF)
 
-En cumplimiento de la especificación académica oficial (*Documento de Requisitos y Plan de 4 Semanas*), se presenta el estado de implementación y cobertura de todos los Requisitos Funcionales:
+En cumplimiento de la especificación académica oficial (*Documento de Requisitos, Plan de 4 Semanas y Criterios de Evaluación*), se presenta el estado de implementación y cobertura de todos los Requisitos Funcionales (RF-01 a RF-17):
 
 | Código | Requisito Funcional | Estado | Componente / Implementación | Evidencia / Prueba Automatizada |
 | :--- | :--- | :---: | :--- | :--- |
@@ -15,34 +16,43 @@ En cumplimiento de la especificación académica oficial (*Documento de Requisit
 | **RF-02** | Buscar productos por nombre o código | ✅ **Completado** | Filtrado reactivo en UI y backend con estados vacíos amigables | Vitest `P18`, prueba negativa con `PROD-999` |
 | **RF-03** | Agregar productos al carrito con cantidades | ✅ **Completado** | `ManageCartUseCase.addItem`, `Cart.ts` | Botón cobro bloqueado si vacío (RN-01), xUnit `P01` |
 | **RF-04** | Modificar cantidades y eliminar productos del carrito | ✅ **Completado** | Controles `+`/`-`, input protegido e interactivo, modal de confirmación | xUnit `P02` (rechazo $\le 0$), Vitest `P17` (límite 1000) |
-| **RF-05** | Subtotales y total coherentes con reglas fiscales | ✅ **Completado** | Desglose fiscal con IVA 15% incluido (Ecuador): Base $30.43, IVA $4.57, Total $35.00 | Vitest `P07`, xUnit `P13` |
+| **RF-05** | Subtotales y total coherentes con reglas fiscales | ✅ **Completado** | Desglose fiscal con IVA 15% incluido (Ecuador): Base $30.43, IVA $4.57, Total $35.00 | Vitest `P07`, xUnit `P09` y `P13` |
 | **RF-06** | Aplicar políticas de descuento habilitadas | ✅ **Completado** | Patrón Strategy (`IDiscountPolicy`): 10% Promo, Umbral Fijo | xUnit `P10`, UI reactiva en `CartSummaryPanel.tsx` |
 | **RF-07** | Incorporar o cambiar políticas de descuento sin impacto | ✅ **Completado** | Principio Abierto/Cerrado (OCP): inyección de nuevas políticas sin modificar `SaleOrder` | xUnit `P10` (`CustomVipDiscountPolicy`) |
-| **RF-08** | Rechazar descuentos no autorizados con mensajes claros | ✅ **Completado** | Validación de dominio en `PercentageDiscountPolicy` ($0\% \le \text{desc} \le 100\%$) | `DomainValidationException` con mensaje claro |
-| **RF-09** | Confirmar una venta con líneas, precios y descuentos | ✅ **Completado** | `CreateSaleUseCase`, agregado `SaleOrder` (patrón State) | xUnit `P13`, UI `PaymentModal.tsx` |
-| **RF-10** | Seleccionar un método de pago configurado | ✅ **Completado** | Detección y resolución dinámica del método Efectivo en la sesión POS de Odoo | `ResolveCashPaymentMethodIdAsync` en Adapter |
-| **RF-11** | Registrar la venta y el pago en Odoo mediante integración | ✅ **Completado** | Sincronización atómica mediante método oficial `pos.order.sync_from_ui` (JSON-2) | **Prueba P09 (Integración Real)**, xUnit `P13`, HTTP 201 Created |
-| **RF-12** | Mostrar identificador, estado y resultado real | ✅ **Completado** | Retorno de `odooOrderReference`, `odooOrderId` y estado `Synced`/`paid` | Modal de éxito en UI, comprobación en Odoo (Evidencia P09) |
-| **RF-13** | Consultar el historial de ventas registradas | ✅ **Completado** | Vista `SalesHistoryPage.tsx`, auditoría local en SQLite | `GET /api/sales`, Vitest `P19` |
-| **RF-14** | Visualizar el detalle de una venta | ✅ **Completado** | Modal `SaleDetailModal.tsx` con desglose fiscal completo de líneas | `GET /api/sales/{id}`, xUnit `P14`, Vitest `P15` |
+| **RF-08** | Rechazar descuentos no autorizados con mensajes claros | ✅ **Completado** | Validación de dominio en `PercentageDiscountPolicy` y `CreateSaleUseCase` | xUnit `RF08_PoliticaDescuentoNoAutorizada...` |
+| **RF-09** | Confirmar una venta con líneas, precios y descuentos | ✅ **Completado** | `CreateSaleUseCase`, agregado `SaleOrder` (patrón State) | xUnit `P09`, `P13`, UI `PaymentModal.tsx` |
+| **RF-10** | Seleccionar un método de pago configurado y extensible | ✅ **Completado** | Patrón Strategy (`IPaymentProcessor`, `CashPaymentProcessor`, `BankTransferPaymentProcessor`) y selector en React UI | xUnit `P10_ExtensibilidadMetodosPago...`, Vitest `P21` |
+| **RF-11** | Registrar la venta y el pago en Odoo mediante integración | ✅ **Completado** | Sincronización atómica mediante método oficial `pos.order.sync_from_ui` (JSON-2) **sin parches manuales** | **Prueba P09 (Integración Real Anexo F)**, xUnit `P09`, HTTP 201 Created |
+| **RF-12** | Mostrar identificador, estado y resultado real | ✅ **Completado** | Retorno de `odooOrderReference`, `odooOrderId` y estado `Synced`/`paid` | Modal post-pago en UI, comprobación en Odoo (Evidencia P09) |
+| **RF-13** | Consultar el historial de ventas registradas | ✅ **Completado** | Vista `SalesHistoryPage.tsx`, filtros reactivos por referencia ERP, cliente y cédula | `GET /api/sales`, Vitest `P19`, xUnit `P14` |
+| **RF-14** | Visualizar el detalle de una venta con trazabilidad | ✅ **Completado** | Modal `SaleDetailModal.tsx` con desglose fiscal completo, metadatos e impresión | `GET /api/sales/{id}`, xUnit `P14`, Vitest `P15` |
 | **RF-15** | Impedir operaciones con datos inválidos o inconsistentes | ✅ **Completado** | Validación de sesión POS cerrada y producto inexistente antes de llamar a Odoo | xUnit `P03` (sesión cerrada), `P04` (producto inválido) |
-| **RF-16** | Evitar registros duplicados por solicitudes repetidas | ✅ **Completado** | Idempotencia estricta mediante cabecera `Idempotency-Key` y persistencia SQLite | xUnit `P06`, prueba de doble POST en vivo |
-| **RF-17** | Gestionar errores de comunicación sin afirmar falso éxito | ✅ **Completado** | Manejo de excepciones RPC/timeout sin marcar órdenes locales como sincronizadas | xUnit `P05` (backend), Vitest `P08` (frontend) |
+| **RF-16** | Evitar registros duplicados por solicitudes repetidas | ✅ **Completado** | Idempotencia estricta mediante cabecera `Idempotency-Key` y persistencia SQLite | xUnit `P06`, Vitest `P20`, script `test_idempotencia_p06.ps1` |
+| **RF-17** | Gestionar errores de comunicación sin afirmar falso éxito | ✅ **Completado** | Manejo de excepciones RFC 7807 (`ProblemDetails`), timeout y caída de Odoo sin falso éxito | xUnit `P05` (backend), Vitest `P08` (frontend) |
 
-> 📌 **Alcance Temporal:**  
-> Se encuentran **100% cumplidos los hitos de las Semanas 1 y 2**, y se ha implementado de forma anticipada la integración transaccional, historial y robustez previstos para la **Semana 3** gracias a la resolución atómica de la API JSON-2 (`pos.order.sync_from_ui`).
+> 📌 **Alcance Temporal y Cierre de Semana 3:**  
+> Se encuentran **100% cumplidos y verificados los hitos de las Semanas 1, 2 y 3**. La solución integra resiliencia estricta, inmutabilidad de órdenes, trazabilidad contable oficial y extensibilidad de pagos bajo principios SOLID (OCP).
 
 ---
 
-## 2. Índice de Decisiones de Diseño (Secciones 7 y 17 de la Rúbrica)
+## 2. Índice de Informes de Evidencias y Decisiones de Diseño
 
-En cumplimiento estricto con las Secciones 7 y 17 de la rúbrica de Patrones de Software, se distinguen explícitamente los **patrones de diseño (GoF / Empresariales)** del enfoque arquitectónico (**Clean Architecture**) y los principios (**SOLID**).
+### A. Informes de Turnos de la Semana 3 (Protocolo de Relevos)
+* 👤 **Eli (Turno 1):** [Informe de Resiliencia, Timeouts e Idempotencia Estricta (P03, P05, P06, P08)](docs/evidencias/semana3-eli-resiliencia-idempotencia.md)
+* 👤 **Vero (Turno 2):** [Informe de Trazabilidad en Odoo, Inmutabilidad e Historial (RF-12, RF-13, RF-14, RN-06)](docs/evidencias/semana3-vero-historial-trazabilidad.md)
+* 👤 **Esteban (Turno 3):** [Informe de Extensibilidad de Pagos, SOLID (OCP) y Selector UI (RF-10, P10)](docs/evidencias/semana3-esteban-extensibilidad-pagos.md)
+* 👤 **Bryan (Turno 4):** [Informe de Auditoría Lead QA, Integración E2E Odoo Anexo F y Cierre Semana 3 (P09, CA-03, CA-05)](docs/evidencias/semana3-bryan-auditoria-p09.md)
+* 📋 **Plan de Trabajo Consolidado:** [Plan de Trabajo Semana 3 Refactorizado](PLAN_TRABAJO_SEMANA_3.md)
+* 🔬 **Auditoría de Integración Real Semanas 1 y 2:** [Trazas JSON-2 de Integración Real contra Odoo 20](docs/evidencias/semana1-2-integracion-real.md)
+
+### B. Fichas Técnicas de Patrones de Diseño (Secciones 7 y 17 de la Rúbrica)
 
 | Ficha Técnica | Patrón de Diseño | Categoría | Responsabilidad en el POS | Requisitos Cubiertos |
 | :--- | :--- | :--- | :--- | :--- |
 | [**DD-01: Políticas de Descuento**](docs/decisiones-diseno/DD-01-strategy-politicas-descuento.md) | **Strategy** | GoF Comportamiento | Encapsula algoritmos de descuento intercambiables (Porcentual, Umbral Fijo, Sin Descuento) sin alterar la entidad `SaleOrder`. | RF-06, RF-07, RF-08, RN-04 |
-| [**DD-02: Ciclo de Vida de la Orden**](docs/decisiones-diseno/DD-02-state-ciclo-vida-orden.md) | **State** | GoF Comportamiento | Controla las fases de la orden (`Draft` $\rightarrow$ `Confirmed` $\rightarrow$ `Synced`) congelando modificaciones antes del cobro. | RN-01, RN-06, RN-07 |
-| [**DD-03: Adaptador y Builder Odoo con Idempotencia**](docs/decisiones-diseno/DD-03-adapter-builder-idempotencia-odoo.md) | **Adapter** + **Builder** + **Idempotent Receiver** | GoF Estructural + GoF Creacional + Patrón Empresarial | Traduce el puerto de aplicación a la API JSON-2 de Odoo, construye comandos ORM de forma atómica y evita cobros duplicados en reintentos. | RF-11, RF-16, RN-03, RN-07, RN-08 |
+| [**DD-02: Ciclo de Vida de la Orden**](docs/decisiones-diseno/DD-02-state-ciclo-vida-orden.md) | **State** | GoF Comportamiento | Controla las fases de la orden (`Draft` $\rightarrow$ `Confirmed` $\rightarrow$ `Synced`) congelando modificaciones antes del cobro (**RN-06**). | RN-01, RN-06, RN-07 |
+| [**DD-03: Adaptador y Builder Odoo con Idempotencia**](docs/decisiones-diseno/DD-03-adapter-builder-idempotencia-odoo.md) | **Adapter** + **Builder** + **Idempotent Receiver** | GoF Estructural + GoF Creacional + Patrón Empresarial | Traduce el puerto de aplicación a la API JSON-2 de Odoo, construye comandos ORM atómicos y evita cobros duplicados en reintentos. | RF-11, RF-16, RN-03, RN-07, RN-08 |
+| **Extensibilidad de Pagos (Turno 3)** | **Strategy** | GoF Comportamiento | Desacopla la autorización contable de métodos de pago (`IPaymentProcessor`, `CashPaymentProcessor`, `BankTransferPaymentProcessor`) cumpliendo **OCP**. | RF-10, RNF-04, RNF-07, P10 |
 
 ---
 
@@ -152,9 +162,9 @@ PORT=5000
 
 ## 6. Ejecución de Pruebas Automatizadas
 
-El proyecto cuenta con **20 pruebas automatizadas (100% PASS)** distribuidas entre backend y frontend:
+El proyecto cuenta con **29 pruebas automatizadas (100% PASS)** distribuidas entre backend y frontend:
 
-### Backend (.NET 10 — xUnit)
+### Backend (.NET 10 — xUnit: 20/20 PASS)
 Ejecutar desde la raíz del proyecto:
 ```powershell
 dotnet test backend/Pos.Tests/Pos.Tests.csproj --logger "console;verbosity=normal"
@@ -164,16 +174,20 @@ dotnet test backend/Pos.Tests/Pos.Tests.csproj --logger "console;verbosity=norma
 | :--- | :--- | :--- |
 | **P01** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P01"` | RN-01: Rechazo de venta sin productos (`DomainValidationException`). |
 | **P02** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P02"` | RN-02: Rechazo de cantidades $\le 0$ (pruebas con 0, -1, -10). |
-| **P03** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P03"` | RF-15: Rechazo si la sesión POS de Odoo está cerrada. |
-| **P04** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P04"` | RF-15: Rechazo si el producto no existe o está deshabilitado en Odoo. |
+| **P03** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P03"` | RF-15 / RN-05: Rechazo si la sesión POS de Odoo está cerrada. |
+| **P04** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P04"` | RF-15 / RN-03: Rechazo si el producto no existe o está deshabilitado en Odoo. |
 | **P05** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P05"` | RN-07 / RF-17: Fallo RPC o timeout no declara éxito ficticio. |
-| **P06** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P06"` | RN-08 / RF-16: Idempotencia estricta sin duplicar orden en Odoo. |
-| **P10** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P10"` | RF-07 / OCP: Inyección de nueva política de descuento sin alterar `SaleOrder`. |
-| **P11 / P12** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~Login"` | Autenticación desacoplada y generación/validación de token JWT. |
-| **P13** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P13"` | Happy Path completo: Venta en efectivo de 2 productos con desglose Odoo (IVA 15% incl.). |
-| **P14** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P14"` | RF-14: Consulta de orden completa por ID con todas sus líneas fiscales. |
+| **P06** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P06"` | RN-08 / RF-16: Idempotencia estricta sin duplicar orden en Odoo ni SQLite. |
+| **P09** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P09"` | **RF-11 / CA-03 / Anexo F:** Venta real de 2 productos ($35) en efectivo, IVA 15% ($4.57) y conciliación Odoo sin parches `write`. |
+| **P10 (Desc.)** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P10_InyectarNuevaPolitica"` | RF-07 / OCP: Inyección de nueva política de descuento sin alterar `SaleOrder`. |
+| **P10 (Pagos)** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P10_ExtensibilidadMetodosPago"` | RF-10 / OCP: Inyección de procesador de pago (`MockCustomCryptoPaymentProcessor`) sin alterar `CreateSaleUseCase`. |
+| **RF-08** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~RF08"` | RN-04: Rechazo con mensaje claro de tipos de descuento no autorizados. |
+| **RN-06** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~RN06"` | RN-06: Patrón State; inmutabilidad estricta de orden confirmada y sincronizada (lanza `SaleOrderStateException`). |
+| **P11 / P12** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~Login"` | ARQ-01 / ARQ-02: Autenticación desacoplada y generación/validación de token JWT. |
+| **P13** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P13"` | Happy Path: Venta en efectivo de 2 productos con política porcentual y desglose fiscal Odoo. |
+| **P14** | `dotnet test backend/Pos.Tests/Pos.Tests.csproj --filter "FullyQualifiedName~P14"` | RF-14: Consulta de orden completa por ID con todas sus líneas fiscales y metadatos. |
 
-### Frontend (React + TypeScript — Vitest)
+### Frontend (React + TypeScript — Vitest: 9/9 PASS)
 Ejecutar ubicándose en `frontend/`:
 ```powershell
 cd frontend
@@ -183,9 +197,20 @@ npm run test
 | Prueba | Comando con Filtro | Cobertura |
 | :--- | :--- | :--- |
 | **P07** | `npm run test -- -t "P07"` | RF-05: Cálculo puro y determinista de carrito, totales, descuento e IVA 15% en `Cart.ts`. |
-| **P08** | `npm run test -- -t "P08"` | RF-17: Captura de `PosApiError` y mensaje amigable en UI sin falso éxito. |
+| **P08** | `npm run test -- -t "P08"` | RN-07 / RF-17: Captura de `PosApiError` (ProblemDetails) y mensaje comprensible sin falso éxito. |
 | **P15** | `npm run test -- -t "P15"` | RF-14: Caso de uso `GetSaleDetailUseCase` y recuperación de orden completa. |
 | **P16** | `npm run test -- -t "P16"` | Formateo de timestamps UTC a hora local Ecuador (`UTC-5`). |
-| **P17** | `npm run test -- -t "P17"` | RF-04: Validación de límites en carrito (1 a 1000 unidades, rechazo de $\le 0$). |
+| **P17** | `npm run test -- -t "P17"` | RF-04 / RN-02: Validación de límites en carrito (1 a 1000 unidades, rechazo de $\le 0$). |
 | **P18** | `npm run test -- -t "P18"` | RF-02: Filtrado reactivo de catálogo por Nombre, Código de referencia y Todos. |
-| **P19** | `npm run test -- -t "P19"` | RF-13: Filtrado de historial por referencia Odoo, cliente y cédula. |
+| **P19** | `npm run test -- -t "P19"` | RF-13: Filtrado de historial por referencia Odoo acotada, cliente y cédula. |
+| **P20** | `npm run test -- -t "P20"` | RN-08 / RF-16: Preservación de `Idempotency-Key` en reintentos para evitar cobros duplicados. |
+| **P21** | `npm run test -- -t "P21"` | RF-10: Propagación del método de pago seleccionado al Gateway de Odoo. |
+
+---
+
+## 7. Dictamen de Cierre Semana 3 — Aprobación Lead QA
+
+Con la ejecución de las suites de prueba al 100% verde (29/29 tests), la resolución de la prueba de integración oficial **P09 (Anexo F)** sin parches manuales en Odoo 20, la inmutabilidad garantizada por el patrón **State**, la extensibilidad con patrón **Strategy** (**OCP / P10**) y la resiliencia probada con patrón **Idempotent Receiver**, se certifica el cierre exitoso de la Semana 3.
+
+**Lead QA Responsable:** Bryan Lopez  
+**Fecha:** Domingo, 8 de Noviembre de 2026

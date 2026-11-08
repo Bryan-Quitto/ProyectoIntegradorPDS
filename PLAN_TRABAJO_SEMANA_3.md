@@ -229,14 +229,14 @@ Dado que `PaymentModal.tsx` es un componente central del cobro, para evitar que 
 
 Antes de que Bryan haga el push de cierre el domingo a las 21:00, debe verificar este checklist:
 
-- [ ] **P01:** Venta sin productos rechazada con `DomainValidationException` (RN-01).
-- [ ] **P02:** Cantidad $\le 0$ rechazada por Value Object `Quantity` (RN-02).
-- [ ] **P03:** Sesión POS cerrada rechazada antes de llamar a Odoo (RN-05).
+- [x] **P01:** Venta sin productos rechazada con `DomainValidationException` (RN-01).
+- [x] **P02:** Cantidad $\le 0$ rechazada por Value Object `Quantity` (RN-02).
+- [x] **P03:** Sesión POS cerrada rechazada antes de llamar a Odoo (RN-05).
 - [x] **P04:** Producto no existente en Odoo rechazado limpiamente (RN-03).
-- [ ] **P05 / P08:** Error de timeout/RPC de Odoo tratado sin declarar falsos éxitos (RN-07).
-- [ ] **P06:** Clave de idempotencia evita cobros dobles en Odoo y SQLite (RN-08 / RF-16).
-- [ ] **P07:** Carrito actualiza cantidades, subtotales e impuestos en tiempo real.
-- [ ] **P09:** Venta real de 2 productos y pago en efectivo conciliada en Odoo sin parches manuales.
+- [x] **P05 / P08:** Error de timeout/RPC de Odoo tratado sin declarar falsos éxitos (RN-07).
+- [x] **P06:** Clave de idempotencia evita cobros dobles en Odoo y SQLite (RN-08 / RF-16).
+- [x] **P07:** Carrito actualiza cantidades, subtotales e impuestos en tiempo real.
+- [x] **P09:** Venta real de 2 productos y pago en efectivo conciliada en Odoo sin parches manuales.
 - [x] **P10:** Extensibilidad de políticas o métodos de pago demostrada con prueba unitaria y principio OCP.
-- [ ] **RN-06:** Orden confirmada/sincronizada inmutable (bloqueada para edición).
-- [ ] **Docs:** 4 informes de evidencias creados con sus fotos (Eli, Vero, Esteban y Bryan con trazas P09/Anexo F) y `README.md` consolidado.
+- [x] **RN-06:** Orden confirmada/sincronizada inmutable (bloqueada para edición).
+- [x] **Docs:** 4 informes de evidencias creados con sus fotos (Eli, Vero, Esteban y Bryan con trazas P09/Anexo F) y `README.md` consolidado.
