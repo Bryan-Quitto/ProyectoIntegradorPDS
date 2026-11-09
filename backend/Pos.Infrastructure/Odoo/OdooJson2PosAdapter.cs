@@ -54,11 +54,25 @@ public class OdooJson2PosAdapter : IOdooPosGateway
         if (!string.IsNullOrWhiteSpace(query))
         {
             var q = query.Trim();
-            domain.Add("|");
-            domain.Add("|");
-            domain.Add(new object[] { "name", "ilike", q });
-            domain.Add(new object[] { "default_code", "ilike", q });
-            domain.Add(new object[] { "barcode", "ilike", q });
+            var cleanNum = q.TrimStart('#').Replace("id:", "", StringComparison.OrdinalIgnoreCase).Replace("id", "", StringComparison.OrdinalIgnoreCase).Trim();
+            if (int.TryParse(cleanNum, out var parsedId))
+            {
+                domain.Add("|");
+                domain.Add("|");
+                domain.Add("|");
+                domain.Add(new object[] { "id", "=", parsedId });
+                domain.Add(new object[] { "name", "ilike", q });
+                domain.Add(new object[] { "default_code", "ilike", q });
+                domain.Add(new object[] { "barcode", "ilike", q });
+            }
+            else
+            {
+                domain.Add("|");
+                domain.Add("|");
+                domain.Add(new object[] { "name", "ilike", q });
+                domain.Add(new object[] { "default_code", "ilike", q });
+                domain.Add(new object[] { "barcode", "ilike", q });
+            }
         }
 
         return await ReadProductsAsync(domain, limit: 100, cancellationToken);

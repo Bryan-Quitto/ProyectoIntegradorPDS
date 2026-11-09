@@ -142,11 +142,37 @@ export class CheckoutSaleUseCase {
     } catch (err: unknown) {
       // RN-07: Prohibido declarar falsos éxitos
       if (err instanceof PosApiError) {
+        let detail = err.detail || '';
+        const idMatch = detail.match(/ID (\d+)/i);
+        if (idMatch) {
+          const prodId = parseInt(idMatch[1], 10);
+          const cartItem = cart.items.find((i) => i.productId === prodId);
+          if (cartItem) {
+            const refText = cartItem.productCode ? `[${cartItem.productCode}] ` : '';
+            detail = detail.replace(
+              new RegExp(`El producto con ID ${prodId}`, 'i'),
+              `El producto ${refText}'${cartItem.productName}' (ID: ${prodId})`
+            );
+          }
+        }
         return {
           success: false,
-          errorMessage: `[${err.title}] ${err.detail}`,
+          errorMessage: `[${err.title}] ${detail}`,
         };
       } else if (err instanceof Error) {
+        const msg = (err.message || '').toLowerCase();
+        if (
+          msg.includes('fetch') ||
+          msg.includes('network') ||
+          msg.includes('load failed') ||
+          msg.includes('connection refused')
+        ) {
+          return {
+            success: false,
+            errorMessage:
+              'Ha ocurrido un error inesperado al conectar con los servicios. Vuelva a intentarlo. En caso de persistir, contáctese con administración.',
+          };
+        }
         return {
           success: false,
           errorMessage: err.message,
@@ -154,7 +180,8 @@ export class CheckoutSaleUseCase {
       }
       return {
         success: false,
-        errorMessage: 'Ocurrió un error inesperado al procesar la venta en Odoo.',
+        errorMessage:
+          'Ha ocurrido un error inesperado al procesar la venta. Vuelva a intentarlo. En caso de persistir, contáctese con administración.',
       };
     }
   }

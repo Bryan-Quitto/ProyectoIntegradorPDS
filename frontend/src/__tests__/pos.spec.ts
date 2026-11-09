@@ -4,6 +4,7 @@ import { Product } from '../domain/Product';
 import { ManageCartUseCase, CheckoutSaleUseCase, GetSaleDetailUseCase } from '../application/useCases/UseCases';
 import { IPosApiGateway, PosApiError, SaleOrderDetailDto } from '../application/ports/IPosApiGateway';
 import { formatEcDate, formatEcTime, parseUtcDate } from '../presentation/utils/dateUtils';
+import { formatUserErrorMessage, USER_FRIENDLY_NETWORK_ERROR } from '../presentation/utils/errorHandler';
 
 describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
   // =========================================================================
@@ -211,15 +212,19 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
     ];
 
     // Función de filtrado idéntica a ProductCatalogPanel
-    const filterCatalog = (query: string, mode: 'ALL' | 'NAME' | 'CODE') => {
+        // Función de filtrado idéntica a ProductCatalogPanel
+    const filterCatalog = (query: string, mode: 'ALL' | 'NAME' | 'CODE' | 'ID') => {
       const term = query.trim().toLowerCase();
       if (!term) return catalog;
+      const cleanIdTerm = term.replace(/^id:?|^#/i, '').trim();
       return catalog.filter((p) => {
         const matchName = p.name.toLowerCase().includes(term);
         const matchCode = (p.defaultCode && p.defaultCode.toLowerCase().includes(term)) || (p.barcode && p.barcode.includes(term));
+        const matchId = cleanIdTerm !== '' && (String(p.id) === cleanIdTerm || String(p.id).includes(cleanIdTerm));
         if (mode === 'NAME') return matchName;
         if (mode === 'CODE') return matchCode;
-        return matchName || matchCode;
+        if (mode === 'ID') return matchId;
+        return matchName || matchCode || matchId;
       });
     };
 
@@ -232,6 +237,11 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
     const byName = filterCatalog('Café', 'NAME');
     expect(byName).toHaveLength(1);
     expect(byName[0].defaultCode).toBe('BEV-001');
+
+    // Búsqueda por ID Odoo exacto
+    const byId = filterCatalog('3', 'ID');
+    expect(byId).toHaveLength(1);
+    expect(byId[0].id).toBe(3);
 
     // Búsqueda 'Todos' por prefijo de código 'PROD'
     const byAll = filterCatalog('PROD', 'ALL');
@@ -405,5 +415,16 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
         paymentMethod: 'Transferencia',
       })
     );
+  });
+
+  // =========================================================================
+  // P22: Mensajes comprensibles ante fallos de conexión (CA-01, RNF-08, P08)
+  // =========================================================================
+  it('P22: formatUserErrorMessage traduce "Failed to fetch" y caídas de servidor a mensaje amigable para el usuario', () => {
+    const rawTypeError = new TypeError('Failed to fetch');
+    const friendlyMsg = formatUserErrorMessage(rawTypeError);
+    expect(friendlyMsg).not.toContain('Failed to fetch');
+    expect(friendlyMsg).toContain('Ha ocurrido un error inesperado al conectar con los servicios');
+    expect(friendlyMsg).toContain('contáctese con administración');
   });
 });

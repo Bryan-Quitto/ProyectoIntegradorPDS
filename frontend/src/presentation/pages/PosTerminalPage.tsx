@@ -122,12 +122,15 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
 
       {/* Alerta de Error de Conexión si aplica */}
       {error && (
-        <div className="bg-rose-50 border-b border-rose-200 px-6 py-2 text-rose-700 text-xs flex items-center justify-between">
+        <div className="bg-rose-50 border-b border-rose-200 px-6 py-2.5 text-rose-700 text-xs flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>Fallo de sincronización con backend/Odoo: {error}</span>
+            <AlertCircle className="h-4 w-4 shrink-0 text-rose-500" />
+            <span className="font-medium">{error}</span>
           </div>
-          <button onClick={() => refresh()} className="underline font-bold text-rose-800">
+          <button
+            onClick={() => refresh()}
+            className="underline font-bold text-rose-800 hover:text-rose-950 ml-4 shrink-0 transition-colors"
+          >
             Reintentar
           </button>
         </div>
@@ -141,7 +144,6 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
             products={products}
             onAddToCart={addItem}
             loading={loading}
-            onSearch={(query) => refresh(query)}
           />
         </div>
 

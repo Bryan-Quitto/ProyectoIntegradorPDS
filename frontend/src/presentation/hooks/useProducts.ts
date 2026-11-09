@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Product } from '@/domain/Product';
 import { PosSession } from '@/application/ports/IPosApiGateway';
 import { searchCatalogUseCase, getActiveSessionUseCase } from '@/di';
+import { formatUserErrorMessage } from '../utils/errorHandler';
 
 export function useProducts() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -20,11 +21,7 @@ export function useProducts() {
       setProducts(prods);
       setActiveSession(session);
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Error desconocido cargando datos de Odoo.');
-      }
+      setError(formatUserErrorMessage(err, 'cargar el catálogo de productos'));
     } finally {
       setLoading(false);
     }

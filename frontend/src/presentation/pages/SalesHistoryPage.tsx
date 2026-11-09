@@ -308,10 +308,13 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
                 <span>Cargando historial de ventas...</span>
               </div>
             ) : error ? (
-              <div className="p-8 text-center text-rose-600 text-sm flex flex-col items-center gap-1.5">
-                <AlertCircle className="h-5 w-5" />
-                <p className="font-semibold">Error al cargar el historial:</p>
-                <p className="text-xs text-slate-600">{error}</p>
+              <div className="p-8 text-center text-rose-600 text-sm flex flex-col items-center gap-2 max-w-lg mx-auto">
+                <AlertCircle className="h-6 w-6 text-rose-500" />
+                <p className="font-semibold text-rose-700">Error al cargar el historial:</p>
+                <p className="text-xs text-slate-600 bg-rose-50 border border-rose-100 rounded-lg p-3 leading-relaxed">{error}</p>
+                <Button variant="outline" size="sm" onClick={() => refresh()} className="mt-1 text-xs">
+                  <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Reintentar
+                </Button>
               </div>
             ) : sales.length === 0 ? (
               <div className="p-12 text-center text-slate-400">
@@ -358,9 +361,15 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
 
                     return (
                       <TableRow key={sale.orderId} className="hover:bg-slate-50/80">
-                        {/* ID Local (primeros 8 caracteres) */}
+                        {/* ID Local (primeros 8 caracteres con tooltip completo) */}
                         <TableCell className="font-mono text-xs text-slate-500">
-                          {sale.orderId.substring(0, 8)}...
+                          <span
+                            title={sale.orderId}
+                            aria-label={`Identificador local completo: ${sale.orderId}`}
+                            className="cursor-help hover:text-slate-800 transition-colors underline decoration-dotted decoration-slate-300"
+                          >
+                            {sale.orderId.substring(0, 8)}...
+                          </span>
                         </TableCell>
 
                         {/* Referencia Oficial en Odoo 20 */}
@@ -368,6 +377,14 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
                           <div className="flex items-center gap-1.5 font-mono">
                             <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
                             <span>{sale.odooOrderReference || (sale.odooOrderId ? `Odoo #${sale.odooOrderId}` : 'Pendiente')}</span>
+                            {sale.odooOrderId && (
+                              <span
+                                className="text-[10px] font-mono text-slate-500 bg-slate-100 border border-slate-200 px-1 py-0.5 rounded font-normal"
+                                title={`ID interno en base de datos de Odoo: ${sale.odooOrderId}`}
+                              >
+                                #{sale.odooOrderId}
+                              </span>
+                            )}
                           </div>
                         </TableCell>
 

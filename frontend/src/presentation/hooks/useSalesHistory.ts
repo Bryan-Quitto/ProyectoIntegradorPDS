@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { SaleOrderResult } from '@/application/ports/IPosApiGateway';
 import { getSalesHistoryUseCase } from '@/di';
+import { formatUserErrorMessage } from '../utils/errorHandler';
 
 export function useSalesHistory() {
   const [sales, setSales] = useState<SaleOrderResult[]>([]);
@@ -14,11 +15,7 @@ export function useSalesHistory() {
       const data = await getSalesHistoryUseCase.execute();
       setSales(data);
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Error al cargar historial de ventas.');
-      }
+      setError(formatUserErrorMessage(err, 'cargar el historial de ventas'));
     } finally {
       setLoading(false);
     }

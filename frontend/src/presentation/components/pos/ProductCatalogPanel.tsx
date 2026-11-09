@@ -8,13 +8,13 @@ import { Badge } from '../ui/Badge';
 import { Pagination } from '../ui/Pagination';
 import { Search, Plus, Package, Filter, X } from 'lucide-react';
 
-export type ProductFilterType = 'ALL' | 'NAME' | 'CODE';
+export type ProductFilterType = 'ALL' | 'NAME' | 'CODE' | 'ID';
 
 interface ProductCatalogPanelProps {
   products: Product[];
   onAddToCart: (product: Product) => void;
   loading: boolean;
-  onSearch: (query: string) => void;
+  onSearch?: (query: string) => void;
 }
 
 export const ProductCatalogPanel: React.FC<ProductCatalogPanelProps> = ({
@@ -29,7 +29,7 @@ export const ProductCatalogPanel: React.FC<ProductCatalogPanelProps> = ({
   const querySearch = searchParams.get('buscar') || searchParams.get('q') || '';
   const rawFilter = (searchParams.get('filtro') || searchParams.get('filter') || 'ALL').toUpperCase();
   const queryFilter: ProductFilterType =
-    rawFilter === 'NAME' || rawFilter === 'CODE' ? rawFilter : 'ALL';
+    rawFilter === 'NAME' || rawFilter === 'CODE' || rawFilter === 'ID' ? rawFilter : 'ALL';
   const queryPage = Math.max(1, parseInt(searchParams.get('pagina') || searchParams.get('page') || '1', 10) || 1);
 
   const [searchTerm, setSearchTerm] = useState(querySearch);
@@ -60,12 +60,10 @@ export const ProductCatalogPanel: React.FC<ProductCatalogPanelProps> = ({
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setSearchTerm(val);
-    onSearch(val);
   };
 
   const handleClearSearch = () => {
     setSearchTerm('');
-    onSearch('');
   };
 
   const getPlaceholder = () => {
@@ -73,10 +71,12 @@ export const ProductCatalogPanel: React.FC<ProductCatalogPanelProps> = ({
       case 'NAME':
         return 'Buscar producto por nombre (ej. Producto A, Café)...';
       case 'CODE':
-        return 'Buscar por código de referencia o código de barras (ej. PROD-001)...';
+        return 'Buscar por código o código de barras (ej. PROD-001)...';
+      case 'ID':
+        return 'Buscar por ID interno de Odoo (ej. 1, 2, 5)...';
       case 'ALL':
       default:
-        return 'Buscar por nombre, código de referencia o código de barras...';
+        return 'Buscar por nombre, código de referencia, código de barras o ID Odoo...';
     }
   };
 
@@ -85,15 +85,22 @@ export const ProductCatalogPanel: React.FC<ProductCatalogPanelProps> = ({
     const term = searchTerm.trim().toLowerCase();
     if (!term) return products;
 
+    // Normalizar término para búsqueda de ID (remueve '#', 'id:', 'id')
+    const cleanIdTerm = term.replace(/^id:?|^#/i, '').trim();
+
     return products.filter((p) => {
       const matchName = p.name.toLowerCase().includes(term);
       const matchCode =
         (p.defaultCode && p.defaultCode.toLowerCase().includes(term)) ||
         (p.barcode && p.barcode.toLowerCase().includes(term));
+      const matchId =
+        cleanIdTerm !== '' &&
+        (String(p.id) === cleanIdTerm || String(p.id).includes(cleanIdTerm));
 
       if (filterType === 'NAME') return matchName;
       if (filterType === 'CODE') return matchCode;
-      return matchName || matchCode;
+      if (filterType === 'ID') return matchId;
+      return matchName || matchCode || matchId;
     });
   }, [products, searchTerm, filterType]);
 
@@ -177,6 +184,17 @@ export const ProductCatalogPanel: React.FC<ProductCatalogPanelProps> = ({
           >
             Código
           </button>
+          <button
+            type="button"
+            onClick={() => setFilterType('ID')}
+            className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+              filterType === 'ID'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            ID Odoo
+          </button>
 
           {searchTerm && (
             <span className="ml-auto text-[11px] text-slate-400 font-mono">
@@ -229,17 +247,21 @@ export const ProductCatalogPanel: React.FC<ProductCatalogPanelProps> = ({
                 className="group relative p-3 border rounded-xl hover:border-emerald-500 hover:shadow-md transition-all cursor-pointer bg-white flex flex-col justify-between"
               >
                 <div>
-                  {/* Badge de Código de Referencia Odoo */}
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    {product.defaultCode ? (
-                      <span className="text-[11px] font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-1.5 py-0.5 rounded shadow-xs">
-                        {product.defaultCode}
-                      </span>
-                    ) : (
-                      <span className="text-[11px] font-mono text-slate-400 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
-                        REF: #{product.id}
-                      </span>
-                    )}
+                  {/* Badges de Código de Referencia e ID Odoo */}
+                  <div className="flex items-center justify-between gap-1.5 mb-1.5">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {product.defaultCode ? (
+                        <span className="text-[11px] font-mono font-bold text-emerald-800 bg-emerald-50 border border-emerald-200/80 px-1.5 py-0.5 rounded shadow-xs">
+                          {product.defaultCode}
+                        </span>
+                      ) : null}
+                    </div>
+                    <span
+                      className="text-[10px] font-mono font-medium text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded"
+                      title="Identificador interno en Odoo ERP"
+                    >
+                      ID Odoo: #{product.id}
+                    </span>
                   </div>
 
                   <h4 className="font-semibold text-slate-800 text-sm line-clamp-2 group-hover:text-emerald-700 transition-colors">

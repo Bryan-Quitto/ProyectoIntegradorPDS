@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { SaleOrderDetailDto } from '@/application/ports/IPosApiGateway';
 import { getSaleDetailUseCase } from '@/di';
+import { formatUserErrorMessage } from '../utils/errorHandler';
 
 export function useSaleDetail() {
   const [sale, setSale] = useState<SaleOrderDetailDto | null>(null);
@@ -20,11 +21,7 @@ export function useSaleDetail() {
         setSale(data);
       }
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Error al obtener el detalle de la venta.');
-      }
+      setError(formatUserErrorMessage(err, 'obtener el detalle de la venta'));
     } finally {
       setLoading(false);
     }

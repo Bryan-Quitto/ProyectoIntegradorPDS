@@ -240,6 +240,12 @@ export const CartSummaryPanel: React.FC<CartSummaryPanelProps> = ({
                       {item.productCode}
                     </span>
                   )}
+                  <span
+                    className="font-mono text-slate-400 bg-slate-100 border border-slate-200 px-1 py-0.5 mr-1 rounded text-[10px]"
+                    title="ID Odoo"
+                  >
+                    #{item.productId}
+                  </span>
                   {item.productName}
                 </p>
                 <p className="text-xs text-slate-500">

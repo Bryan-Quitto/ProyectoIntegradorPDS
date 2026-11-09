@@ -50,13 +50,35 @@ export class PosApiHttpAdapter implements IPosApiGateway {
     return (await response.json()) as T;
   }
 
+  private async safeFetch(url: string | URL, init?: RequestInit): Promise<Response> {
+    try {
+      return await fetch(url.toString(), init);
+    } catch (err: unknown) {
+      if (
+        err instanceof TypeError ||
+        (err instanceof Error &&
+          (err.message.toLowerCase().includes('fetch') ||
+            err.message.toLowerCase().includes('network') ||
+            err.message.toLowerCase().includes('load failed') ||
+            err.message.toLowerCase().includes('connection refused')))
+      ) {
+        throw new PosApiError(
+          503,
+          'Servicio No Disponible',
+          'Ha ocurrido un error inesperado al conectar con los servicios. Vuelva a intentarlo. En caso de persistir, contáctese con administración.'
+        );
+      }
+      throw err;
+    }
+  }
+
   public async getProducts(search?: string): Promise<Product[]> {
     const url = new URL(`${this._baseUrl}/api/products`);
     if (search?.trim()) {
       url.searchParams.set('search', search.trim());
     }
 
-    const response = await fetch(url.toString(), {
+    const response = await this.safeFetch(url.toString(), {
       method: 'GET',
       headers: {
         Accept: 'application/json',
@@ -77,7 +99,7 @@ export class PosApiHttpAdapter implements IPosApiGateway {
 
   public async getActiveSession(): Promise<PosSession | null> {
     try {
-      const response = await fetch(`${this._baseUrl}/api/pos/sessions/active`, {
+      const response = await this.safeFetch(`${this._baseUrl}/api/pos/sessions/active`, {
         method: 'GET',
         headers: {
           Accept: 'application/json',
@@ -99,7 +121,7 @@ export class PosApiHttpAdapter implements IPosApiGateway {
   }
 
   public async createSale(request: CreateSaleRequest): Promise<SaleOrderResult> {
-    const response = await fetch(`${this._baseUrl}/api/sales`, {
+    const response = await this.safeFetch(`${this._baseUrl}/api/sales`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -114,7 +136,7 @@ export class PosApiHttpAdapter implements IPosApiGateway {
   }
 
   public async getSalesHistory(): Promise<SaleOrderResult[]> {
-    const response = await fetch(`${this._baseUrl}/api/sales`, {
+    const response = await this.safeFetch(`${this._baseUrl}/api/sales`, {
       method: 'GET',
       headers: {
         Accept: 'application/json',
@@ -126,7 +148,7 @@ export class PosApiHttpAdapter implements IPosApiGateway {
   }
 
   public async getSaleById(id: string): Promise<SaleOrderDetailDto | null> {
-    const response = await fetch(`${this._baseUrl}/api/sales/${id}`, {
+    const response = await this.safeFetch(`${this._baseUrl}/api/sales/${id}`, {
       method: 'GET',
       headers: {
         Accept: 'application/json',
