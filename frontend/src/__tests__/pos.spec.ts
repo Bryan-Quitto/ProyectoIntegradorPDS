@@ -320,7 +320,7 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
   // =========================================================================
   it('P20: Propagación estricta de Idempotency-Key suministrada para garantizar reintentos idempotentes (RN-08)', async () => {
     const mockGateway: IPosApiGateway = {
-      searchProducts: vi.fn(),
+      getProducts: vi.fn(),
       getActiveSession: vi.fn(),
       createSale: vi.fn().mockResolvedValue({
         orderId: 'test-order-guid',
@@ -366,7 +366,7 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
   // =========================================================================
   it('P21: CheckoutSaleUseCase propaga el método de pago seleccionado al Gateway de Odoo (RF-10)', async () => {
     const mockGateway: IPosApiGateway = {
-      searchProducts: vi.fn(),
+      getProducts: vi.fn(),
       getActiveSession: vi.fn(),
       createSale: vi.fn().mockResolvedValue({
         orderId: 'test-order-guid',
