@@ -24,7 +24,8 @@ export function useCheckout() {
       posSessionId: number,
       customerDocument?: string,
       customerName?: string,
-      paymentMethod?: string
+      paymentMethod?: string,
+      partnerId?: number | null
     ): Promise<CheckoutResult> => {
       setProcessing(true);
       setLastResult(null);
@@ -44,6 +45,7 @@ export function useCheckout() {
           customerDocument,
           customerName,
           paymentMethod,
+          partnerId,
           idempotencyKey: activeIdempotencyKeyRef.current,
         });
 

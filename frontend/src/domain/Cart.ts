@@ -99,15 +99,39 @@ export class Cart {
     return Number(discount.toFixed(2));
   }
 
+  private getLineFiscalBreakdown() {
+    const sub = this.subtotal;
+    const discount = this.discountAmount;
+    const discountPercent = sub > 0 ? (discount / sub) * 100 : 0;
+
+    return this.items.map((item) => {
+      const lineSubtotal = item.subtotal;
+      const discountedAmount = Number(
+        (lineSubtotal * (1 - discountPercent / 100)).toFixed(2)
+      );
+      const lineDiscount = Number((lineSubtotal - discountedAmount).toFixed(2));
+      const taxBase = discountedAmount;
+      const taxAmount = Number((taxBase * Cart.VAT_RATE).toFixed(2));
+      const totalWithTax = Number((taxBase + taxAmount).toFixed(2));
+      return { lineSubtotal, lineDiscount, taxBase, taxAmount, totalWithTax };
+    });
+  }
+
   public get netSubtotal(): number {
-    return Number(Math.max(0, this.subtotal - this.discountAmount).toFixed(2));
+    const breakdown = this.getLineFiscalBreakdown();
+    const sum = breakdown.reduce((acc, b) => acc + b.taxBase, 0);
+    return Number(sum.toFixed(2));
   }
 
   public get taxAmount(): number {
-    return Number((this.netSubtotal * Cart.VAT_RATE).toFixed(2));
+    const breakdown = this.getLineFiscalBreakdown();
+    const sum = breakdown.reduce((acc, b) => acc + b.taxAmount, 0);
+    return Number(sum.toFixed(2));
   }
 
   public get total(): number {
-    return Number((this.netSubtotal + this.taxAmount).toFixed(2));
+    const breakdown = this.getLineFiscalBreakdown();
+    const sum = breakdown.reduce((acc, b) => acc + b.totalWithTax, 0);
+    return Number(sum.toFixed(2));
   }
 }

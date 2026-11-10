@@ -10,7 +10,7 @@ export function useProducts() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadData = useCallback(async (query = '') => {
+  const loadData = useCallback(async (query = ''): Promise<{ products: Product[]; session: PosSession | null } | null> => {
     setLoading(true);
     setError(null);
     try {
@@ -20,8 +20,10 @@ export function useProducts() {
       ]);
       setProducts(prods);
       setActiveSession(session);
+      return { products: prods, session };
     } catch (err: unknown) {
       setError(formatUserErrorMessage(err, 'cargar el catálogo de productos'));
+      return null;
     } finally {
       setLoading(false);
     }

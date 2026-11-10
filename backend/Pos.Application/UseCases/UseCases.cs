@@ -24,6 +24,21 @@ public class SearchProductsUseCase
     }
 }
 
+public class SearchCustomersUseCase
+{
+    private readonly IOdooPosGateway _odooGateway;
+
+    public SearchCustomersUseCase(IOdooPosGateway odooGateway)
+    {
+        _odooGateway = odooGateway;
+    }
+
+    public async Task<IReadOnlyList<CustomerDto>> ExecuteAsync(string query, CancellationToken cancellationToken = default)
+    {
+        return await _odooGateway.SearchCustomersAsync(query, cancellationToken);
+    }
+}
+
 public class GetActiveSessionUseCase
 {
     private readonly IOdooPosGateway _odooGateway;
@@ -124,7 +139,8 @@ public class CreateSaleUseCase
             command.CustomerDocument,
             command.CustomerName,
             discountPolicy,
-            id: DeriveOrderId(command.IdempotencyKey));
+            id: DeriveOrderId(command.IdempotencyKey),
+            partnerId: command.PartnerId);
 
         // 5. RN-03: Cargar precio y regla fiscal oficiales desde Odoo SOLO para los productos solicitados.
         //    Nunca se confía en precios enviados por el cliente.
@@ -213,7 +229,8 @@ public class CreateSaleUseCase
             PaymentMethod: paymentResult.MethodName,
             AmountPaid: paymentResult.AmountPaid,
             SessionName: activeSession?.Name ?? $"Sesión #{order.PosSessionId}",
-            OperatorName: !string.IsNullOrWhiteSpace(activeSession?.UserName) ? activeSession.UserName : "Cajero POS"
+            OperatorName: !string.IsNullOrWhiteSpace(activeSession?.UserName) ? activeSession.UserName : "Cajero POS",
+            PartnerId: order.PartnerId
         );
 
         // 10. Persistencia local para trazabilidad e idempotencia

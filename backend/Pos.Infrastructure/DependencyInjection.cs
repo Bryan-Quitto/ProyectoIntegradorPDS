@@ -79,6 +79,7 @@ public static class DependencyInjection
         // 5. Application Use Cases
         services.AddScoped<LoginOperatorUseCase>();
         services.AddScoped<SearchProductsUseCase>();
+        services.AddScoped<SearchCustomersUseCase>();
         services.AddScoped<GetActiveSessionUseCase>();
         services.AddScoped<CreateSaleUseCase>();
         services.AddScoped<GetSalesHistoryUseCase>();

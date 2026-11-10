@@ -78,6 +78,78 @@ public class OdooJson2PosAdapter : IOdooPosGateway
         return await ReadProductsAsync(domain, limit: 100, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<CustomerDto>> SearchCustomersAsync(string query, CancellationToken cancellationToken = default)
+    {
+        // [FILTRADO ESTRICTO DE CLIENTES EXTERNOS EN ODOO]:
+        // 1. user_ids = false: Excluye usuarios del sistema (Administrator, cajeros, operadores, empleados).
+        // 2. ref_company_ids = false: Excluye la empresa emisora interna (My Company, sucursales).
+        // 3. vat != 9999999999999 y name != Consumidor Final: Excluye el registro genérico de Consumidor Final
+        //    (ya que el POS lo maneja como acción predeterminada dedicada sin partner Odoo).
+        var domain = new List<object>
+        {
+            new object[] { "active", "=", true },
+            new object[] { "user_ids", "=", false },
+            new object[] { "ref_company_ids", "=", false },
+            new object[] { "vat", "!=", "9999999999999" },
+            new object[] { "name", "not ilike", "Consumidor Final" }
+        };
+
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            var q = query.Trim();
+            var cleanNum = q.TrimStart('#').Replace("id:", "", StringComparison.OrdinalIgnoreCase).Replace("id", "", StringComparison.OrdinalIgnoreCase).Trim();
+            if (int.TryParse(cleanNum, out var parsedId))
+            {
+                domain.Add("|");
+                domain.Add("|");
+                domain.Add("|");
+                domain.Add(new object[] { "id", "=", parsedId });
+                domain.Add(new object[] { "name", "ilike", q });
+                domain.Add(new object[] { "vat", "ilike", q });
+                domain.Add(new object[] { "email", "ilike", q });
+            }
+            else
+            {
+                domain.Add("|");
+                domain.Add("|");
+                domain.Add(new object[] { "name", "ilike", q });
+                domain.Add(new object[] { "vat", "ilike", q });
+                domain.Add(new object[] { "email", "ilike", q });
+            }
+        }
+
+        var result = await CallAsync("res.partner", "search_read", new
+        {
+            domain,
+            fields = new[] { "id", "name", "vat", "email", "street", "phone", "customer_rank" },
+            limit = 50
+        }, cancellationToken);
+
+        var rows = result?.AsArray() ?? new JsonArray();
+        var customers = new List<CustomerDto>(rows.Count);
+        foreach (var row in rows)
+        {
+            if (row is null) continue;
+            var id = row["id"]!.GetValue<int>();
+            var name = ReadString(row["name"]) is { Length: > 0 } n ? n : $"Cliente {id}";
+            var vat = ReadString(row["vat"]);
+            var email = ReadString(row["email"]);
+            var street = ReadString(row["street"]);
+            var phone = ReadString(row["phone"]);
+
+            // Filtro defensivo adicional: omitir Consumidor Final o identificaciones SRI genéricas
+            if (string.Equals(vat, "9999999999999", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("Consumidor Final", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            customers.Add(new CustomerDto(id, name, vat, email, street, phone));
+        }
+
+        return customers;
+    }
+
     public async Task<IReadOnlyList<ProductDto>> GetProductsByIdsAsync(IReadOnlyCollection<int> productIds, CancellationToken cancellationToken = default)
     {
         if (productIds.Count == 0)
@@ -234,6 +306,8 @@ public class OdooJson2PosAdapter : IOdooPosGateway
                 return new OdooSyncResultDto(false, reference, odooId, $"Odoo registró la orden #{odooId} pero en estado '{state}', no pagada.");
             }
 
+            // Descontar existencias vendidas directamente en Odoo para sincronizacion inmediata de stock
+            await DeductSoldProductsStockAsync(saleOrder, cancellationToken);
             return new OdooSyncResultDto(true, reference, odooId, null);
         }
         catch (OdooCommunicationException ex)
@@ -444,5 +518,55 @@ public class OdooJson2PosAdapter : IOdooPosGateway
             if (int.TryParse(v.ToString(), out var parsedId)) return (parsedId, string.Empty);
         }
         return (0, string.Empty);
+    }
+
+    /// <summary>
+    /// Descuenta en Odoo las cantidades vendidas para cada producto de la orden confirmada.
+    /// Garantiza la integridad del stock tanto en Odoo como en las consultas subsecuentes del POS.
+    /// </summary>
+    private async Task DeductSoldProductsStockAsync(SaleOrder saleOrder, CancellationToken ct)
+    {
+        try
+        {
+            var productIds = saleOrder.Lines.Select(l => l.ProductId).Distinct().ToArray();
+            if (productIds.Length == 0) return;
+
+            var prods = await CallAsync("product.product", "search_read", new
+            {
+                domain = new object[] { new object[] { "id", "in", productIds } },
+                fields = new[] { "id", "qty_available" }
+            }, ct);
+
+            var rows = prods?.AsArray() ?? new JsonArray();
+            var stockMap = new Dictionary<int, decimal>();
+            foreach (var r in rows)
+            {
+                if (r is null) continue;
+                stockMap[r["id"]!.GetValue<int>()] = ReadDecimal(r["qty_available"]);
+            }
+
+            var soldGrouped = saleOrder.Lines
+                .GroupBy(l => l.ProductId)
+                .ToDictionary(g => g.Key, g => g.Sum(l => l.Quantity.Value));
+
+            foreach (var (productId, soldQty) in soldGrouped)
+            {
+                if (!stockMap.TryGetValue(productId, out var currentQty)) continue;
+                var newQty = Math.Max(0m, currentQty - soldQty);
+
+                await CallAsync("product.product", "write", new
+                {
+                    ids = new[] { productId },
+                    vals = new { qty_available = newQty }
+                }, ct);
+
+                _logger.LogInformation("Stock de producto {ProductId} en Odoo descontado de {CurrentQty} a {NewQty} (-{SoldQty}).",
+                    productId, currentQty, newQty, soldQty);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No fue posible actualizar el stock de los productos vendidos en Odoo para la orden {OrderId}.", saleOrder.Id);
+        }
     }
 }

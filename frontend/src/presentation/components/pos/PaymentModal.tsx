@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dialog } from '../ui/Dialog';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
-import { validateEcuadorianId } from '@/domain/ecuadorianIdValidator';
 import { CheckoutResult } from '@/application/useCases/UseCases';
+import { Customer } from '@/application/ports/IPosApiGateway';
 import {
   CheckCircle2,
   AlertTriangle,
@@ -15,16 +15,25 @@ import {
   Store,
   Receipt,
   Lock,
+  Printer,
+  RotateCcw,
 } from 'lucide-react';
 
 interface PaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   total: number;
-  onConfirmPayment: (customerDoc: string, customerName: string, paymentMethod: string) => Promise<CheckoutResult>;
+  onConfirmPayment: (
+    customerDoc: string,
+    customerName: string,
+    paymentMethod: string,
+    partnerId?: number | null
+  ) => Promise<CheckoutResult>;
   processing: boolean;
   lastResult: CheckoutResult | null;
   onSuccessDone: () => void;
+  selectedCustomer?: Customer | null;
+  onOpenCustomerSelector?: () => void;
 }
 
 export const PaymentModal: React.FC<PaymentModalProps> = ({
@@ -35,38 +44,28 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   processing,
   lastResult,
   onSuccessDone,
+  selectedCustomer,
 }) => {
   const [customerDoc, setCustomerDoc] = useState('9999999999999');
   const [customerName, setCustomerName] = useState('Consumidor Final');
-  const [idError, setIdError] = useState<string | null>(null);
 
   // [GUÍA ESTEBAN - TURNO 3 - RF-10 / SELECTOR DE MÉTODOS DE PAGO]:
   // Soporta Efectivo (por defecto), Transferencia Bancaria y Tarjeta
   const [paymentMethod, setPaymentMethod] = useState<'Efectivo' | 'Transferencia' | 'Tarjeta'>('Efectivo');
 
-  const handleDocChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value.trim();
-    setCustomerDoc(val);
-
-    if (val && val !== '9999999999999') {
-      const res = validateEcuadorianId(val);
-      setIdError(res.isValid ? null : res.error || 'Identificación inválida.');
+  useEffect(() => {
+    if (selectedCustomer) {
+      setCustomerDoc(selectedCustomer.vat || '9999999999999');
+      setCustomerName(selectedCustomer.name);
     } else {
-      setIdError(null);
+      setCustomerDoc('9999999999999');
+      setCustomerName('Consumidor Final');
     }
-  };
+  }, [selectedCustomer, isOpen]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (customerDoc !== '9999999999999') {
-      const res = validateEcuadorianId(customerDoc);
-      if (!res.isValid) {
-        setIdError(res.error || 'Cédula o RUC incorrecto.');
-        return;
-      }
-    }
-
-    await onConfirmPayment(customerDoc, customerName, paymentMethod);
+    await onConfirmPayment(customerDoc, customerName, paymentMethod, selectedCustomer?.id ?? null);
   };
 
   return (
@@ -94,7 +93,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       className={lastResult?.success ? "max-w-xl" : "max-w-md"}
     >
       {lastResult?.success ? (
-        <div className="space-y-4 py-1 text-xs">
+        <div className="space-y-4 py-1 text-xs" id="printable-invoice">
+          {/* Cabecera para impresión física */}
+          <div className="hidden print:block text-center border-b border-slate-300 pb-3 mb-2">
+            <h2 className="text-base font-bold uppercase tracking-wider text-slate-900">Comprobante de Venta POS</h2>
+            <p className="text-xs text-slate-600">Sistema Punto de Venta &bull; Integración Odoo 20 Community</p>
+          </div>
+
           {/* 1. Cabecera de Trazabilidad Oficial de Odoo ERP */}
           <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-3.5 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
@@ -208,20 +213,43 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             </div>
           </div>
 
-          {/* 5. Nota de Inmutabilidad y Botón de Nueva Venta */}
-          <div className="flex items-center gap-1.5 text-[10px] text-slate-500 bg-amber-50/60 border border-amber-200/60 rounded-lg p-2">
+          {/* 5. Nota de Inmutabilidad y Botones de Acción */}
+          <div className="flex items-center gap-1.5 text-[10px] text-slate-500 bg-amber-50/60 border border-amber-200/60 rounded-lg p-2 no-print">
             <Lock className="h-3.5 w-3.5 text-amber-600 shrink-0" />
             <span>
               <strong>Garantía RN-06:</strong> La orden se encuentra cerrada e inmutable en Odoo ERP y SQLite local.
             </span>
           </div>
 
-          <Button
-            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-10 text-xs shadow-sm"
-            onClick={onSuccessDone}
-          >
-            Completar y Nueva Venta
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-2 pt-1 no-print">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => window.print()}
+              className="text-xs h-10 border-slate-300 gap-1.5 text-slate-700 hover:text-emerald-700 hover:bg-emerald-50"
+              title="Imprimir comprobante físico de la venta"
+            >
+              <Printer className="h-4 w-4 text-emerald-600" />
+              <span>Imprimir Recibo</span>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              className="text-xs h-10 border-amber-300 text-amber-900 bg-amber-50/50 hover:bg-amber-100 gap-1.5"
+              title="Cerrar el comprobante manteniendo los ítems y cliente en la pantalla para hacer cambios y emitir una nueva orden"
+            >
+              <RotateCcw className="h-4 w-4 text-amber-700" />
+              <span>Modificar Orden (Conservar Ítems)</span>
+            </Button>
+            <Button
+              type="button"
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-10 text-xs shadow-sm"
+              onClick={onSuccessDone}
+            >
+              <span>Finalizar y Nueva Venta</span>
+            </Button>
+          </div>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -236,40 +264,66 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           )}
 
           <div className="space-y-3">
+            {/* Sección de Cliente Asignado en Modo Confirmación (Solo Lectura) */}
+            {selectedCustomer ? (
+              <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200 text-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4 text-emerald-700 shrink-0" />
+                    <span className="font-bold text-slate-900 text-sm">{selectedCustomer.name}</span>
+                  </div>
+                  <Badge variant="success" className="font-mono text-[10px]">
+                    Odoo Partner #{selectedCustomer.id}
+                  </Badge>
+                </div>
+                <div className="text-slate-600 font-mono text-xs mt-1">
+                  RUC / Cédula: <span className="font-bold text-slate-800">{customerDoc}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4 text-slate-500 shrink-0" />
+                  <div>
+                    <span className="font-bold text-slate-800 text-sm">Consumidor Final</span>
+                    <div className="font-mono text-slate-500 text-xs">RUC: 9999999999999</div>
+                  </div>
+                </div>
+                <Badge variant="default" className="text-[10px]">
+                  Venta General
+                </Badge>
+              </div>
+            )}
+
+            {/* Cédula / RUC del Cliente (Solo Lectura) */}
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                <User className="h-3.5 w-3.5" /> Cédula / RUC del Cliente
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-semibold text-slate-700 flex items-center gap-1">
+                  <User className="h-3.5 w-3.5 text-slate-500" /> Cédula / RUC del Cliente
+                </label>
+                <span className="text-[11px] text-slate-400 font-medium">Solo lectura (Confirmación)</span>
+              </div>
               <Input
                 value={customerDoc}
-                onChange={handleDocChange}
-                placeholder="9999999999999 para Consumidor Final"
-                className={idError ? 'border-rose-500 focus:ring-rose-500' : ''}
+                readOnly
+                tabIndex={-1}
+                className="bg-slate-100 text-slate-800 font-mono font-bold select-none cursor-not-allowed border-slate-300"
               />
-              {idError && <p className="text-xs text-rose-600 mt-1">{idError}</p>}
-              <div className="flex gap-2 mt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCustomerDoc('9999999999999');
-                    setCustomerName('Consumidor Final');
-                    setIdError(null);
-                  }}
-                  className="text-[10px] text-slate-500 hover:text-emerald-600 underline"
-                >
-                  Usar Consumidor Final
-                </button>
-              </div>
             </div>
 
+            {/* Nombre o Razón Social (Solo Lectura) */}
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Nombre o Razón Social
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-semibold text-slate-700">
+                  Nombre o Razón Social
+                </label>
+                <span className="text-[11px] text-slate-400 font-medium">Solo lectura (Confirmación)</span>
+              </div>
               <Input
                 value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                placeholder="Ej. Juan Pérez"
+                readOnly
+                tabIndex={-1}
+                className="bg-slate-100 text-slate-800 font-semibold select-none cursor-not-allowed border-slate-300"
               />
             </div>
 
@@ -337,7 +391,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             <Button
               type="submit"
               className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
-              disabled={processing || !!idError}
+              disabled={processing}
             >
               {processing ? (
                 <div className="flex items-center gap-1.5 justify-center">

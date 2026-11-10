@@ -121,6 +121,13 @@ app.MapGet("/api/products", async (string? search, SearchProductsUseCase useCase
     return Results.Ok(products);
 }).AllowAnonymous();
 
+// Búsqueda de Clientes en Odoo (res.partner)
+app.MapGet("/api/customers", async (string? search, SearchCustomersUseCase useCase, CancellationToken ct) =>
+{
+    var customers = await useCase.ExecuteAsync(search ?? string.Empty, ct);
+    return Results.Ok(customers);
+}).AllowAnonymous();
+
 // Consulta de Sesión de POS Activa
 app.MapGet("/api/pos/sessions/active", async (GetActiveSessionUseCase useCase, CancellationToken ct) =>
 {

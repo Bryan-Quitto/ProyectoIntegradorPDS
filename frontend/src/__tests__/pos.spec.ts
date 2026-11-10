@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Cart } from '../domain/Cart';
 import { Product } from '../domain/Product';
-import { ManageCartUseCase, CheckoutSaleUseCase, GetSaleDetailUseCase } from '../application/useCases/UseCases';
+import { ManageCartUseCase, CheckoutSaleUseCase, GetSaleDetailUseCase, SearchCustomersUseCase } from '../application/useCases/UseCases';
+import { Customer } from '../application/ports/IPosApiGateway';
 import { IPosApiGateway, PosApiError, SaleOrderDetailDto } from '../application/ports/IPosApiGateway';
 import { formatEcDate, formatEcTime, parseUtcDate } from '../presentation/utils/dateUtils';
 import { formatUserErrorMessage, USER_FRIENDLY_NETWORK_ERROR } from '../presentation/utils/errorHandler';
@@ -52,6 +53,7 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
     // Arrange: Mock del IPosApiGateway que simula respuesta ProblemDetails 502 Bad Gateway desde Odoo
     const mockGateway: IPosApiGateway = {
       getProducts: vi.fn(),
+      getCustomers: vi.fn(),
       getActiveSession: vi.fn(),
       createSale: vi.fn().mockRejectedValue(
         new PosApiError(502, 'Fallo de Comunicación con ERP Odoo', 'Odoo rechazó la orden: Sesión cerrada en el servidor.')
@@ -91,7 +93,7 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
       posSessionId: 4,
       sessionName: 'My Company/00002',
       operatorName: 'Cajero POS',
-      customerDocument: '1712345678',
+      customerDocument: '1710034065',
       customerName: 'Juan Perez',
       subTotal: 35.00,
       discountAmount: 0.00,
@@ -134,6 +136,7 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
 
     const mockGateway: IPosApiGateway = {
       getProducts: vi.fn(),
+      getCustomers: vi.fn(),
       getActiveSession: vi.fn(),
       createSale: vi.fn(),
       getSalesHistory: vi.fn(),
@@ -258,7 +261,7 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
         odooOrderReference: '260-1-000003',
         odooOrderId: 5,
         customerName: 'Juan Perez',
-        customerDocument: '1712345678',
+        customerDocument: '1710034065',
         totalAmount: 35.00,
       },
       {
@@ -331,6 +334,7 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
   it('P20: Propagación estricta de Idempotency-Key suministrada para garantizar reintentos idempotentes (RN-08)', async () => {
     const mockGateway: IPosApiGateway = {
       getProducts: vi.fn(),
+      getCustomers: vi.fn(),
       getActiveSession: vi.fn(),
       createSale: vi.fn().mockResolvedValue({
         orderId: 'test-order-guid',
@@ -377,6 +381,7 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
   it('P21: CheckoutSaleUseCase propaga el método de pago seleccionado al Gateway de Odoo (RF-10)', async () => {
     const mockGateway: IPosApiGateway = {
       getProducts: vi.fn(),
+      getCustomers: vi.fn(),
       getActiveSession: vi.fn(),
       createSale: vi.fn().mockResolvedValue({
         orderId: 'test-order-guid',
@@ -426,5 +431,70 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
     expect(friendlyMsg).not.toContain('Failed to fetch');
     expect(friendlyMsg).toContain('Ha ocurrido un error inesperado al conectar con los servicios');
     expect(friendlyMsg).toContain('contáctese con administración');
+  });
+
+  // =========================================================================
+  // P23: SearchCustomersUseCase consulta clientes en Gateway (Punto 5)
+  // =========================================================================
+  it('P23: SearchCustomersUseCase consulta y mapea clientes de Odoo res.partner', async () => {
+    const mockCustomers: Customer[] = [
+      { id: 10, name: 'Juan Perez', vat: '1712345678', email: 'juan@test.com', street: 'Av. 10 de Agosto' },
+      { id: 11, name: 'Empresa ABC', vat: '1790012345001', email: 'abc@test.com', street: 'Av. Amazonas' },
+    ];
+
+    const mockGateway: IPosApiGateway = {
+      getProducts: vi.fn(),
+      getCustomers: vi.fn().mockResolvedValue(mockCustomers),
+      getActiveSession: vi.fn(),
+      createSale: vi.fn(),
+      getSalesHistory: vi.fn(),
+      getSaleById: vi.fn(),
+    };
+
+    const useCase = new SearchCustomersUseCase(mockGateway);
+    const result = await useCase.execute('Perez');
+
+    expect(mockGateway.getCustomers).toHaveBeenCalledWith('Perez');
+    expect(result).toHaveLength(2);
+    expect(result[0].name).toBe('Juan Perez');
+    expect(result[0].vat).toBe('1712345678');
+  });
+
+  // =========================================================================
+  // P24: CheckoutSaleUseCase propaga partnerId hacia CreateSaleRequest (Punto 5)
+  // =========================================================================
+  it('P24: CheckoutSaleUseCase enlaza partnerId a la venta en Odoo', async () => {
+    const mockGateway: IPosApiGateway = {
+      getProducts: vi.fn(),
+      getCustomers: vi.fn(),
+      getActiveSession: vi.fn(),
+      createSale: vi.fn().mockResolvedValue({
+        orderId: 'sale-1',
+        totalAmount: 15,
+      } as any),
+      getSalesHistory: vi.fn(),
+      getSaleById: vi.fn(),
+    };
+
+    const cart = new Cart();
+    cart.addItem({ id: 1, name: 'Prod A', price: 15, barcode: '001', availableQuantity: 5 }, 1);
+    const useCase = new CheckoutSaleUseCase(mockGateway);
+
+    const result = await useCase.execute({
+      cart,
+      posSessionId: 1,
+      customerDocument: '1710034065',
+      customerName: 'Juan Perez',
+      partnerId: 42,
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockGateway.createSale).toHaveBeenCalledWith(
+      expect.objectContaining({
+        partnerId: 42,
+        customerDocument: '1710034065',
+        customerName: 'Juan Perez',
+      })
+    );
   });
 });

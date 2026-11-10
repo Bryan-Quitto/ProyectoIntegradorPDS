@@ -2,7 +2,14 @@ import { Cart } from '@/domain/Cart';
 import { Product } from '@/domain/Product';
 import { DiscountType } from '@/domain/CartItem';
 import { validateEcuadorianId } from '@/domain/ecuadorianIdValidator';
-import { IPosApiGateway, CreateSaleRequest, SaleOrderResult, PosApiError, PosSession } from '../ports/IPosApiGateway';
+import {
+  IPosApiGateway,
+  CreateSaleRequest,
+  SaleOrderResult,
+  PosApiError,
+  PosSession,
+  Customer,
+} from '../ports/IPosApiGateway';
 export { GetSaleDetailUseCase } from './GetSaleDetailUseCase';
 
 export class ManageCartUseCase {
@@ -46,6 +53,25 @@ export class SearchCatalogUseCase {
   }
 }
 
+export class SearchCustomersUseCase {
+  private readonly _gateway?: IPosApiGateway;
+
+  constructor(gateway?: IPosApiGateway) {
+    this._gateway = gateway;
+  }
+
+  public async execute(queryOrGateway?: string | IPosApiGateway, query?: string): Promise<Customer[]> {
+    if (queryOrGateway && typeof queryOrGateway === 'object' && 'getCustomers' in queryOrGateway) {
+      return await queryOrGateway.getCustomers(query);
+    }
+    const gateway = this._gateway;
+    if (!gateway) {
+      throw new Error('IPosApiGateway no provisto a SearchCustomersUseCase');
+    }
+    return await gateway.getCustomers(queryOrGateway as string | undefined);
+  }
+}
+
 export class GetActiveSessionUseCase {
   private readonly _gateway: IPosApiGateway;
 
@@ -78,6 +104,7 @@ export interface CheckoutInput {
   idempotencyKey?: string;
   // [GUÍA ESTEBAN - TURNO 3 - RF-10]: Método de pago dinámico
   paymentMethod?: string;
+  partnerId?: number | null;
 }
 
 export interface CheckoutResult {
@@ -94,7 +121,7 @@ export class CheckoutSaleUseCase {
   }
 
   public async execute(input: CheckoutInput): Promise<CheckoutResult> {
-    const { cart, posSessionId, customerDocument, customerName, idempotencyKey, paymentMethod } = input;
+    const { cart, posSessionId, customerDocument, customerName, idempotencyKey, paymentMethod, partnerId } = input;
 
     // 1. RN-01: Rechazar venta sin productos
     if (cart.items.length === 0) {
@@ -131,6 +158,7 @@ export class CheckoutSaleUseCase {
         quantity: i.quantity,
       })),
       paymentMethod: paymentMethod || 'Efectivo',
+      partnerId: partnerId ?? null,
     };
 
     try {

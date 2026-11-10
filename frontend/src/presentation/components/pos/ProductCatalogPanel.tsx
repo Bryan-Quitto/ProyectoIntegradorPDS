@@ -6,7 +6,7 @@ import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { Pagination } from '../ui/Pagination';
-import { Search, Plus, Package, Filter, X } from 'lucide-react';
+import { Search, Plus, Package, X, Maximize2 } from 'lucide-react';
 
 export type ProductFilterType = 'ALL' | 'NAME' | 'CODE' | 'ID';
 
@@ -15,6 +15,7 @@ interface ProductCatalogPanelProps {
   onAddToCart: (product: Product) => void;
   loading: boolean;
   onSearch?: (query: string) => void;
+  onOpenCatalogModal?: () => void;
 }
 
 export const ProductCatalogPanel: React.FC<ProductCatalogPanelProps> = ({
@@ -22,6 +23,7 @@ export const ProductCatalogPanel: React.FC<ProductCatalogPanelProps> = ({
   onAddToCart,
   loading,
   onSearch,
+  onOpenCatalogModal,
 }) => {
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -60,10 +62,12 @@ export const ProductCatalogPanel: React.FC<ProductCatalogPanelProps> = ({
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setSearchTerm(val);
+    if (onSearch) onSearch(val);
   };
 
   const handleClearSearch = () => {
     setSearchTerm('');
+    if (onSearch) onSearch('');
   };
 
   const getPlaceholder = () => {
@@ -119,86 +123,62 @@ export const ProductCatalogPanel: React.FC<ProductCatalogPanelProps> = ({
             <Package className="h-5 w-5 text-emerald-600" />
             Catálogo de Productos Odoo
           </CardTitle>
-          <Badge variant="success" className="bg-emerald-50 text-emerald-700 border-emerald-200">
-            {products.length} disponibles
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="success" className="bg-emerald-50 text-emerald-700 border-emerald-200">
+              {products.length} disponibles
+            </Badge>
+            {onOpenCatalogModal && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={onOpenCatalogModal}
+                className="h-7 text-xs gap-1 border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                title="Abrir catálogo en modal de pantalla completa"
+              >
+                <Maximize2 className="h-3.5 w-3.5 text-emerald-600" />
+                <span>Modal</span>
+              </Button>
+            )}
+          </div>
         </div>
 
-        {/* Input de Búsqueda con botón de limpiar */}
-        <div className="relative mt-3">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-          <Input
-            placeholder={getPlaceholder()}
-            value={searchTerm}
-            onChange={handleSearchChange}
-            className="pl-9 pr-8 bg-slate-50 focus:bg-white"
-          />
-          {searchTerm && (
-            <button
-              type="button"
-              onClick={handleClearSearch}
-              className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
-              title="Limpiar búsqueda"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </div>
+        {/* Input de Búsqueda con Combobox Select de Filtros (Punto 6) */}
+        <div className="flex items-center gap-2 mt-3">
+          <select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value as ProductFilterType)}
+            className="text-xs h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer shadow-xs shrink-0"
+          >
+            <option value="ALL">🔍 Todos</option>
+            <option value="NAME">📦 Nombre</option>
+            <option value="CODE">🏷️ Código</option>
+            <option value="ID">#️⃣ ID Odoo</option>
+          </select>
 
-        {/* Filtros de Búsqueda: Todos | Nombre | Código */}
-        <div className="flex items-center gap-1.5 mt-2.5 text-xs">
-          <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1 mr-1">
-            <Filter className="h-3 w-3" />
-            Filtro:
-          </span>
-          <button
-            type="button"
-            onClick={() => setFilterType('ALL')}
-            className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
-              filterType === 'ALL'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            Todos
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterType('NAME')}
-            className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
-              filterType === 'NAME'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            Nombre
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterType('CODE')}
-            className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
-              filterType === 'CODE'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            Código
-          </button>
-          <button
-            type="button"
-            onClick={() => setFilterType('ID')}
-            className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
-              filterType === 'ID'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            ID Odoo
-          </button>
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <Input
+              placeholder={getPlaceholder()}
+              value={searchTerm}
+              onChange={handleSearchChange}
+              className="pl-9 pr-8 bg-slate-50 focus:bg-white text-xs h-9"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={handleClearSearch}
+                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                title="Limpiar búsqueda"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
 
           {searchTerm && (
-            <span className="ml-auto text-[11px] text-slate-400 font-mono">
-              {filteredProducts.length} de {products.length}
+            <span className="text-[11px] text-slate-400 font-mono shrink-0">
+              {filteredProducts.length}/{products.length}
             </span>
           )}
         </div>

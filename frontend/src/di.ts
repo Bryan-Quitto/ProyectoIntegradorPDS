@@ -3,6 +3,7 @@ import {
   GetSalesHistoryUseCase,
   CheckoutSaleUseCase,
   SearchCatalogUseCase,
+  SearchCustomersUseCase,
   GetActiveSessionUseCase,
   ManageCartUseCase,
   GetSaleDetailUseCase,
@@ -23,6 +24,7 @@ export const apiAdapter = new PosApiHttpAdapter();
 
 // Casos de uso ensamblados y listos para ser consumidos por la capa de presentación
 export const searchCatalogUseCase = new SearchCatalogUseCase(apiAdapter);
+export const searchCustomersUseCase = new SearchCustomersUseCase(apiAdapter);
 export const getActiveSessionUseCase = new GetActiveSessionUseCase(apiAdapter);
 export const getSalesHistoryUseCase = new GetSalesHistoryUseCase(apiAdapter);
 export const getSaleDetailUseCase = new GetSaleDetailUseCase(apiAdapter);

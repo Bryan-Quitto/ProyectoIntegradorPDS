@@ -9,6 +9,15 @@ export interface PosSession {
   isOpen: boolean;
 }
 
+export interface Customer {
+  id: number;
+  name: string;
+  vat: string;
+  email?: string;
+  street?: string;
+  phone?: string;
+}
+
 export interface CreateSaleRequest {
   idempotencyKey: string;
   posSessionId: number;
@@ -19,6 +28,7 @@ export interface CreateSaleRequest {
   items: { productId: number; quantity: number }[];
   // [GUÍA ESTEBAN - TURNO 3 - RF-10]: Método de pago dinámico
   paymentMethod?: string;
+  partnerId?: number | null;
 }
 
 export interface SaleOrderLineDetail {
@@ -53,6 +63,7 @@ export interface SaleOrderDetailDto {
   odooOrderId?: number;
   createdAtUtc: string;
   lines: SaleOrderLineDetail[];
+  partnerId?: number | null;
 }
 
 export type SaleOrderResult = SaleOrderDetailDto;
@@ -73,6 +84,7 @@ export class PosApiError extends Error {
 
 export interface IPosApiGateway {
   getProducts(search?: string): Promise<Product[]>;
+  getCustomers(search?: string): Promise<Customer[]>;
   getActiveSession(): Promise<PosSession | null>;
   createSale(request: CreateSaleRequest): Promise<SaleOrderResult>;
   getSalesHistory(): Promise<SaleOrderResult[]>;

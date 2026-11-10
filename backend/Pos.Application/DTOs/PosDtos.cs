@@ -26,6 +26,15 @@ public record PosSessionDto(
     string UserName = ""
 );
 
+public record CustomerDto(
+    int Id,
+    string Name,
+    string Vat = "",
+    string Email = "",
+    string Street = "",
+    string Phone = ""
+);
+
 public record CreateSaleItemDto(
     int ProductId,
     int Quantity
@@ -39,7 +48,8 @@ public record CreateSaleCommand(
     string DiscountType,
     decimal DiscountValue,
     List<CreateSaleItemDto> Items,
-    string PaymentMethod = "Efectivo"
+    string PaymentMethod = "Efectivo",
+    int? PartnerId = null
 );
 
 public record SaleOrderLineDto(
@@ -73,7 +83,8 @@ public record SaleOrderResponseDto(
     string PaymentMethod = "Efectivo",
     decimal AmountPaid = 0m,
     string SessionName = "",
-    string OperatorName = "Cajero POS"
+    string OperatorName = "Cajero POS",
+    int? PartnerId = null
 );
 
 public record OdooSyncResultDto(

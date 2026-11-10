@@ -4,7 +4,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '../ui/Card
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { Dialog } from '../ui/Dialog';
-import { ShoppingCart, Plus, Minus, Trash2, Tag, Check, AlertTriangle } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, Tag, Check, AlertTriangle, ArrowLeftRight } from 'lucide-react';
 
 interface CartSummaryPanelProps {
   items: CartItem[];
@@ -19,6 +19,8 @@ interface CartSummaryPanelProps {
   onApplyDiscount: (type: DiscountType, value: number) => void;
   onOpenPayment: () => void;
   disabled: boolean;
+  onOpenProductModal?: () => void;
+  onReplaceItem?: (item: CartItem) => void;
 }
 
 interface CartQuantityInputProps {
@@ -193,6 +195,8 @@ export const CartSummaryPanel: React.FC<CartSummaryPanelProps> = ({
   onApplyDiscount,
   onOpenPayment,
   disabled,
+  onOpenProductModal,
+  onReplaceItem,
 }) => {
   const [itemToRemove, setItemToRemove] = React.useState<CartItem | null>(null);
   const [isClearModalOpen, setIsClearModalOpen] = React.useState(false);
@@ -206,18 +210,33 @@ export const CartSummaryPanel: React.FC<CartSummaryPanelProps> = ({
             <CardTitle className="text-lg font-bold">Carrito de Venta</CardTitle>
             <Badge variant="default">{items.length}</Badge>
           </div>
-          {items.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsClearModalOpen(true)}
-              disabled={disabled}
-              className="text-xs text-rose-500 hover:text-rose-700 hover:bg-rose-50 h-7 px-2"
-              title="Vaciar / Limpiar todo el carrito"
-            >
-              Vaciar
-            </Button>
-          )}
+          <div className="flex items-center gap-1.5">
+            {onOpenProductModal && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onOpenProductModal}
+                disabled={disabled}
+                className="text-xs h-7 px-2 border-emerald-300 text-emerald-800 hover:bg-emerald-50 flex items-center gap-1"
+                title="Abrir catálogo modal para agregar productos"
+              >
+                <Plus className="h-3.5 w-3.5 text-emerald-600" />
+                <span>Agregar</span>
+              </Button>
+            )}
+            {items.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsClearModalOpen(true)}
+                disabled={disabled}
+                className="text-xs text-rose-500 hover:text-rose-700 hover:bg-rose-50 h-7 px-2"
+                title="Vaciar / Limpiar todo el carrito"
+              >
+                Vaciar
+              </Button>
+            )}
+          </div>
         </CardHeader>
 
       <CardContent className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -283,6 +302,18 @@ export const CartSummaryPanel: React.FC<CartSummaryPanelProps> = ({
                 >
                   <Plus className="h-3 w-3" />
                 </Button>
+                {onReplaceItem && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0 text-slate-400 hover:text-blue-600 hover:bg-blue-50"
+                    onClick={() => onReplaceItem(item)}
+                    disabled={disabled}
+                    title="Reemplazar producto por otro del catálogo"
+                  >
+                    <ArrowLeftRight className="h-3.5 w-3.5" />
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="ghost"

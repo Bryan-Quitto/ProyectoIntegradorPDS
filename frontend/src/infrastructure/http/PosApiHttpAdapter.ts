@@ -2,6 +2,7 @@ import { Product } from '@/domain/Product';
 import {
   IPosApiGateway,
   PosSession,
+  Customer,
   CreateSaleRequest,
   SaleOrderResult,
   SaleOrderDetailDto,
@@ -94,6 +95,31 @@ export class PosApiHttpAdapter implements IPosApiGateway {
       barcode: p.barcode ?? '',
       availableQuantity: p.availableQuantity ?? 0,
       defaultCode: p.defaultCode || p.default_code || '',
+    }));
+  }
+
+  public async getCustomers(search?: string): Promise<Customer[]> {
+    const url = new URL(`${this._baseUrl}/api/customers`);
+    if (search?.trim()) {
+      url.searchParams.set('search', search.trim());
+    }
+
+    const response = await this.safeFetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        ...this.getAuthHeader(),
+      },
+    });
+
+    const raw = await this.handleResponse<any[]>(response);
+    return raw.map((c) => ({
+      id: c.id,
+      name: c.name,
+      vat: c.vat ?? '',
+      email: c.email ?? '',
+      street: c.street ?? '',
+      phone: c.phone ?? '',
     }));
   }
 

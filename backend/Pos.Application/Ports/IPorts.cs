@@ -8,6 +8,11 @@ public interface IOdooPosGateway
     Task<IReadOnlyList<ProductDto>> SearchProductsAsync(string query, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Consulta clientes en Odoo mediante el modelo res.partner (contactos/clientes activos, vat, email, etc.).
+    /// </summary>
+    Task<IReadOnlyList<CustomerDto>> SearchCustomersAsync(string query, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Obtiene los productos habilitados para el POS con los IDs indicados (precio y regla fiscal oficiales, RN-03).
     /// Los IDs inexistentes o no habilitados simplemente no se devuelven.
     /// </summary>

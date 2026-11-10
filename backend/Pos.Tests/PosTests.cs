@@ -738,4 +738,52 @@ public class PosTests
         actResync.Should().Throw<SaleOrderStateException>()
             .WithMessage("*ya fue sincronizada*");
     }
+
+    // =========================================================================
+    // P20: Consulta de Clientes Odoo en res.partner (Punto 5)
+    // =========================================================================
+    [Fact]
+    public async Task P20_SearchCustomersUseCase_DelegatesToGateway()
+    {
+        var gateway = Substitute.For<IOdooPosGateway>();
+        var sampleCustomers = new List<CustomerDto>
+        {
+            new(10, "Juan Perez", "1712345678", "juan@test.com", "Av. Amazonas", "0991234567"),
+            new(11, "Empresa ABC Cía. Ltda.", "1790012345001", "contacto@abc.com", "Av. Shyris", "022345678")
+        };
+        gateway.SearchCustomersAsync("Perez", Arg.Any<CancellationToken>())
+            .Returns(sampleCustomers);
+
+        var useCase = new SearchCustomersUseCase(gateway);
+        var result = await useCase.ExecuteAsync("Perez");
+
+        result.Should().HaveCount(2);
+        result[0].Name.Should().Be("Juan Perez");
+        result[0].Vat.Should().Be("1712345678");
+        result[1].Vat.Should().Be("1790012345001");
+    }
+
+    // =========================================================================
+    // P21: Builder Odoo incluye partner_id al asociar cliente (Punto 5)
+    // =========================================================================
+    [Fact]
+    public void P21_OdooPosOrderPayloadBuilder_IncludesPartnerId_WhenSpecified()
+    {
+        var order = new SaleOrder(
+            posSessionId: 1,
+            customerDocument: "1712345678",
+            customerName: "Juan Perez",
+            partnerId: 42);
+
+        var product = new Product(1, "Producto Test", new Money(10m), "123", 100, new TaxRule(0.15m, true, new[] { 1 }));
+        order.AddLine(product, new Quantity(1));
+
+        var payload = new Pos.Infrastructure.Odoo.OdooPosOrderPayloadBuilder()
+            .FromSaleOrder(order)
+            .WithPayment(7)
+            .Build();
+
+        payload.Should().ContainKey("partner_id");
+        payload["partner_id"].Should().Be(42);
+    }
 }
