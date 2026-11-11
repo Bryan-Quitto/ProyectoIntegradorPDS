@@ -64,7 +64,7 @@ public class BankTransferPaymentProcessor : IPaymentProcessor
     {
         if (string.IsNullOrWhiteSpace(paymentMethod)) return false;
         var m = paymentMethod.Trim().ToUpperInvariant();
-        return m is "TRANSFERENCIA" or "TRANSFER" or "BANK";
+        return m is "TRANSFERENCIA" or "TRANSFER" or "BANK" or "TARJETA" or "CARD";
     }
 
     public async Task<PaymentProcessingResult> ProcessPaymentAsync(

@@ -16,7 +16,6 @@ import {
   Receipt,
   Lock,
   Printer,
-  RotateCcw,
 } from 'lucide-react';
 
 interface PaymentModalProps {
@@ -71,7 +70,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   return (
     <Dialog
       open={isOpen}
-      onOpenChange={(open) => !open && onClose()}
+      onOpenChange={(open) => {
+        if (!open) {
+          if (lastResult?.success) {
+            onSuccessDone();
+          } else {
+            onClose();
+          }
+        }
+      }}
       title={
         lastResult?.success ? (
           <div className="flex items-center gap-2 text-emerald-700">
@@ -221,7 +228,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             </span>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-2 pt-1 no-print">
+          <div className="flex flex-col sm:flex-row gap-2.5 pt-2 border-t border-slate-100 no-print">
             <Button
               type="button"
               variant="outline"
@@ -231,16 +238,6 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             >
               <Printer className="h-4 w-4 text-emerald-600" />
               <span>Imprimir Recibo</span>
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              className="text-xs h-10 border-amber-300 text-amber-900 bg-amber-50/50 hover:bg-amber-100 gap-1.5"
-              title="Cerrar el comprobante manteniendo los ítems y cliente en la pantalla para hacer cambios y emitir una nueva orden"
-            >
-              <RotateCcw className="h-4 w-4 text-amber-700" />
-              <span>Modificar Orden (Conservar Ítems)</span>
             </Button>
             <Button
               type="button"

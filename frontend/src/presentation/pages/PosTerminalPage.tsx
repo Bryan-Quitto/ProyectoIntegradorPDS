@@ -7,6 +7,7 @@ import { Customer } from '@/application/ports/IPosApiGateway';
 import { Product } from '@/domain/Product';
 import { CartItem } from '@/domain/CartItem';
 import { validateEcuadorianId } from '@/domain/ecuadorianIdValidator';
+import { useAuthStore } from '../stores/useAuthStore';
 import { PaymentModal } from '../components/pos/PaymentModal';
 import { CustomerSelectorModal } from '../components/pos/CustomerSelectorModal';
 import { ProductSelectorModal } from '../components/pos/ProductSelectorModal';
@@ -42,6 +43,7 @@ import {
   Mail,
   MapPin,
   Loader2,
+  LogOut,
 } from 'lucide-react';
 
 interface PosTerminalPageProps {
@@ -197,6 +199,13 @@ const TableQuantityInput: React.FC<TableQuantityInputProps> = ({
 
 export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHistory }) => {
   const navigate = useNavigate();
+  const user = useAuthStore((state) => state.user);
+  const logout = useAuthStore((state) => state.logout);
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   const handleNavigateHistory = () => {
     if (onNavigateHistory) {
@@ -223,6 +232,9 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
 
   const { products, activeSession, loading, error, refresh } = useProducts();
   const { checkout, processing, lastResult, resetCheckoutSession } = useCheckout();
+
+  // Verificación de caja asignada al vendedor (Fase 4 / Control de Acceso)
+  const hasAssignedSession = Boolean(user?.posSessionId && user.posSessionId > 0);
 
   // Estados de Modales y Selección (Puntos 1, 5 y 6)
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -294,6 +306,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
 
   // Condición de guardia para habilitar el cobro POS (Pre-flight antes de abrir el modal)
   const canProceedToPayment =
+    hasAssignedSession &&
     Boolean(activeSession) &&
     items.length > 0 &&
     stockValidationErrors.length === 0 &&
@@ -304,6 +317,8 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
 
   // Manejador de selección o reemplazo de productos desde el Modal dedicado
   const handleSelectOrReplaceProduct = (product: Product) => {
+    if (!hasAssignedSession) return;
+
     if (replacingItem) {
       const oldId = replacingItem.productId;
       const newId = product.id;
@@ -397,7 +412,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
 
   // [SHIFT-LEFT VALIDATION PRE-FLIGHT]: Validación en caliente contra Odoo antes de abrir el modal de cobro
   const handleProceedToPayment = async () => {
-    if (items.length === 0) return;
+    if (items.length === 0 || !hasAssignedSession) return;
 
     setIsValidatingPreflight(true);
     setPreflightErrorAlert(null);
@@ -499,26 +514,38 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
-          {activeSession ? (
-            <Badge
-              variant="success"
-              className="bg-emerald-50 text-emerald-700 border-emerald-300 flex items-center gap-1.5 py-1 px-2.5"
+          {/* Badge Vendedor y Caja Asignada (Fase 4) */}
+          <div
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border shadow-2xs ${
+              hasAssignedSession
+                ? 'bg-slate-50 border-slate-200'
+                : 'bg-amber-50 border-amber-300 text-amber-800'
+            }`}
+          >
+            <span className="font-medium flex items-center gap-1">
+              <User className="h-3.5 w-3.5 text-slate-500" />
+              {user?.name || 'Vendedor'}
+            </span>
+            <span className={hasAssignedSession ? 'text-slate-300' : 'text-amber-400'}>|</span>
+            <span
+              className={`font-semibold flex items-center gap-1.5 ${
+                hasAssignedSession ? 'text-emerald-700' : 'text-amber-800'
+              }`}
             >
-              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="text-xs font-semibold">
-                Sesión Odoo #{activeSession.id}: {activeSession.name} ({activeSession.state})
-                {activeSession.userName ? ` • Cajero: ${activeSession.userName}` : ''}
-              </span>
-            </Badge>
-          ) : (
-            <Badge
-              variant="warning"
-              className="bg-amber-50 text-amber-700 border-amber-300 flex items-center gap-1.5 py-1 px-2.5 text-xs"
-            >
-              <AlertCircle className="h-3.5 w-3.5" />
-              Sin sesión activa en Odoo
-            </Badge>
-          )}
+              {hasAssignedSession ? (
+                <>
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <Store className="h-3.5 w-3.5 text-emerald-600" />
+                  <span>{user?.posConfigName || activeSession?.name || 'Caja Asignada'}</span>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+                  <span>Sin caja asignada</span>
+                </>
+              )}
+            </span>
+          </div>
 
           {(items.length > 0 || selectedCustomer) && (
             <Button
@@ -552,6 +579,17 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
             <History className="h-3.5 w-3.5" />
             <span>Historial</span>
           </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleLogout}
+            title="Cerrar Sesión del Vendedor"
+            className="h-8 gap-1.5 text-xs border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Cerrar Sesión</span>
+          </Button>
         </div>
       </header>
 
@@ -571,6 +609,19 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
         </div>
       )}
 
+      {/* Banner de Modo Consulta: Sin Caja Asignada (Fase 4) */}
+      {!hasAssignedSession && (
+        <div className="bg-amber-50 border-b border-amber-300 px-4 sm:px-6 py-3 text-amber-900 text-xs sm:text-sm flex items-start sm:items-center gap-3 shadow-2xs">
+          <AlertCircle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5 sm:mt-0" />
+          <div className="flex-1 leading-relaxed">
+            <span className="font-bold">⚠️ Atención: </span>
+            <span>
+              Su usuario no tiene una caja o sesión de POS activa asignada en Odoo ERP. El terminal se encuentra en modo sólo lectura (no puede agregar productos ni registrar ventas). Contacte al administrador en Odoo para que le asigne y abra una caja.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Contenedor Principal: Layout Centrado en Marcos Horizontales (Estilo NORTHWIND-React) */}
       <main className="max-w-6xl mx-auto w-full p-4 sm:p-6 space-y-6 flex-1 pb-16">
         {/* MARCO 1: INFORMACIÓN DEL CLIENTE E IDENTIFICACIÓN FISCAL */}
@@ -586,8 +637,10 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
                 type="button"
                 variant="outline"
                 size="sm"
+                disabled={!hasAssignedSession}
                 onClick={() => setCustomerModalOpen(true)}
-                className="h-8 text-xs gap-1.5 border-slate-300 hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-800"
+                className="h-8 text-xs gap-1.5 border-slate-300 hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                title={!hasAssignedSession ? 'Modo sólo lectura: Sin caja asignada' : undefined}
               >
                 <UserPlus className="h-3.5 w-3.5 text-emerald-600" />
                 <span>{selectedCustomer ? 'Cambiar Cliente' : 'Seleccionar Cliente (Odoo)'}</span>
@@ -759,11 +812,18 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
               type="button"
               variant="default"
               size="sm"
+              disabled={!hasAssignedSession}
               onClick={() => {
+                if (!hasAssignedSession) return;
                 setReplacingItem(null);
                 setProductModalOpen(true);
               }}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center space-x-1.5 shadow-xs"
+              title={
+                !hasAssignedSession
+                  ? 'Modo sólo lectura: Sin caja asignada en Odoo ERP'
+                  : 'Agregar Producto'
+              }
+              className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center space-x-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Plus className="h-4 w-4" />
               <span>Agregar Producto</span>
@@ -782,11 +842,18 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
                   type="button"
                   variant="outline"
                   size="sm"
+                  disabled={!hasAssignedSession}
                   onClick={() => {
+                    if (!hasAssignedSession) return;
                     setReplacingItem(null);
                     setProductModalOpen(true);
                   }}
-                  className="mt-4 border-emerald-400 text-emerald-800 bg-white hover:bg-emerald-50 gap-1.5"
+                  title={
+                    !hasAssignedSession
+                      ? 'Modo sólo lectura: Sin caja asignada en Odoo ERP'
+                      : 'Abrir Catálogo de Productos'
+                  }
+                  className="mt-4 border-emerald-400 text-emerald-800 bg-white hover:bg-emerald-50 gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Plus className="h-3.5 w-3.5 text-emerald-600" />
                   <span>Abrir Catálogo de Productos</span>
@@ -888,7 +955,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
                               quantity={item.quantity}
                               min={1}
                               max={availableStock > 0 ? availableStock : 1}
-                              disabled={isOutOfStock}
+                              disabled={!hasAssignedSession || isOutOfStock}
                               onUpdate={updateQuantity}
                             />
                             {isExceedingStock ? (
@@ -910,12 +977,18 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
                                 type="button"
                                 variant="ghost"
                                 size="icon"
+                                disabled={!hasAssignedSession}
                                 onClick={() => {
+                                  if (!hasAssignedSession) return;
                                   setReplacingItem(item);
                                   setProductModalOpen(true);
                                 }}
-                                className="h-8 w-8 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50"
-                                title="Reemplazar producto por otro del catálogo"
+                                className="h-8 w-8 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                title={
+                                  !hasAssignedSession
+                                    ? 'Modo sólo lectura: Sin caja asignada'
+                                    : 'Reemplazar producto por otro del catálogo'
+                                }
                               >
                                 <ArrowLeftRight className="h-4 w-4" />
                               </Button>
@@ -923,9 +996,17 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
                                 type="button"
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => setItemToDelete(item)}
-                                className="h-8 w-8 text-rose-500 hover:text-rose-700 hover:bg-rose-50"
-                                title="Eliminar producto de la orden"
+                                disabled={!hasAssignedSession}
+                                onClick={() => {
+                                  if (!hasAssignedSession) return;
+                                  setItemToDelete(item);
+                                }}
+                                className="h-8 w-8 text-rose-500 hover:text-rose-700 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                title={
+                                  !hasAssignedSession
+                                    ? 'Modo sólo lectura: Sin caja asignada'
+                                    : 'Eliminar producto de la orden'
+                                }
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -962,8 +1043,9 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
                   <div className="grid grid-cols-3 gap-2">
                     <button
                       type="button"
+                      disabled={!hasAssignedSession}
                       onClick={() => applyDiscount('NONE', 0)}
-                      className={`text-xs py-2 px-3 rounded-lg border font-medium transition-all ${
+                      className={`text-xs py-2 px-3 rounded-lg border font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                         discountPolicy.type === 'NONE'
                           ? 'bg-slate-800 text-white border-slate-800 shadow-xs'
                           : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
@@ -973,8 +1055,9 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
                     </button>
                     <button
                       type="button"
+                      disabled={!hasAssignedSession}
                       onClick={() => applyDiscount('PERCENTAGE', 10)}
-                      className={`text-xs py-2 px-3 rounded-lg border font-medium transition-all ${
+                      className={`text-xs py-2 px-3 rounded-lg border font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                         discountPolicy.type === 'PERCENTAGE' && discountPolicy.value === 10
                           ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
                           : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
@@ -984,8 +1067,9 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
                     </button>
                     <button
                       type="button"
+                      disabled={!hasAssignedSession}
                       onClick={() => applyDiscount('THRESHOLD_FIXED', 5)}
-                      className={`text-xs py-2 px-3 rounded-lg border font-medium transition-all ${
+                      className={`text-xs py-2 px-3 rounded-lg border font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                         discountPolicy.type === 'THRESHOLD_FIXED'
                           ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
                           : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
@@ -1059,12 +1143,30 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
                   </div>
                 )}
 
+                {/* Banner de Modo Consulta si no tiene caja */}
+                {!hasAssignedSession && (
+                  <div className="p-3.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                    <div>
+                      <span className="font-bold">Modo Sólo Lectura: </span>
+                      <span>
+                        Su usuario no tiene una caja o sesión activa asignada en Odoo ERP. No está autorizado para registrar ventas ni procesar cobros.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <Button
                   type="button"
                   size="lg"
                   onClick={handleProceedToPayment}
-                  disabled={items.length === 0 || isValidatingPreflight}
+                  disabled={items.length === 0 || isValidatingPreflight || !hasAssignedSession}
                   className="w-full mt-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center space-x-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                  title={
+                    !hasAssignedSession
+                      ? 'No puede cobrar: Su usuario no tiene una caja asignada en Odoo ERP'
+                      : undefined
+                  }
                 >
                   {isValidatingPreflight ? (
                     <>

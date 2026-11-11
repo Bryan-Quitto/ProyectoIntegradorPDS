@@ -2,6 +2,9 @@ export interface UserProfile {
   email: string;
   name: string;
   role: string;
+  posSessionId?: number | null;
+  posConfigName?: string | null;
+  odooUserId?: number;
 }
 
 export interface DecodedTokenPayload {
@@ -12,6 +15,9 @@ export interface DecodedTokenPayload {
   sub?: string;
   role?: string | string[];
   Role?: string | string[];
+  pos_session_id?: string | number;
+  pos_config_name?: string;
+  odoo_user_id?: string | number;
   'http://schemas.microsoft.com/ws/2008/06/identity/claims/role'?: string | string[];
   'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'?: string;
   'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'?: string;
@@ -85,7 +91,18 @@ export function extractClaims(token: string): UserProfile {
     role = rawRole.trim();
   }
 
-  return { email, name, role };
+  // 4. POS Session & Odoo claims (Fase 4):
+  const rawSession = payload.pos_session_id;
+  const parsedSession =
+    rawSession !== undefined && rawSession !== null && rawSession !== ''
+      ? Number(rawSession)
+      : null;
+  const posSessionId = parsedSession && parsedSession > 0 ? parsedSession : null;
+  const posConfigName =
+    (payload.pos_config_name as string) || (posSessionId ? undefined : 'Sin Caja Asignada');
+  const odooUserId = payload.odoo_user_id ? Number(payload.odoo_user_id) : undefined;
+
+  return { email, name, role, posSessionId, posConfigName, odooUserId };
 }
 
 export function isTokenExpired(token: string): boolean {

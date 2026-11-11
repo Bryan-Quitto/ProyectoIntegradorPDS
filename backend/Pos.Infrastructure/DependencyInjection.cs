@@ -64,6 +64,9 @@ public static class DependencyInjection
         services.AddHttpClient<IOdooPosGateway, OdooJson2PosAdapter>((sp, client) =>
         {
             client.Timeout = TimeSpan.FromSeconds(60);
+        }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            UseCookies = false
         });
 
         services.AddScoped<IIdempotencyStore, SqliteIdempotencyStore>();

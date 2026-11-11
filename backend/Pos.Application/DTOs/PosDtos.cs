@@ -49,7 +49,9 @@ public record CreateSaleCommand(
     decimal DiscountValue,
     List<CreateSaleItemDto> Items,
     string PaymentMethod = "Efectivo",
-    int? PartnerId = null
+    int? PartnerId = null,
+    int? UserId = null,
+    string? OperatorName = null
 );
 
 public record SaleOrderLineDto(

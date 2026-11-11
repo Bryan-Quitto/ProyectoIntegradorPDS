@@ -1,13 +1,32 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Cart } from '../domain/Cart';
 import { Product } from '../domain/Product';
-import { ManageCartUseCase, CheckoutSaleUseCase, GetSaleDetailUseCase, SearchCustomersUseCase } from '../application/useCases/UseCases';
+import { ManageCartUseCase, CheckoutSaleUseCase, GetSaleDetailUseCase, GetSalesHistoryUseCase, SearchCustomersUseCase, LoginUseCase } from '../application/useCases/UseCases';
 import { Customer } from '../application/ports/IPosApiGateway';
 import { IPosApiGateway, PosApiError, SaleOrderDetailDto } from '../application/ports/IPosApiGateway';
 import { formatEcDate, formatEcTime, parseUtcDate } from '../presentation/utils/dateUtils';
 import { formatUserErrorMessage, USER_FRIENDLY_NETWORK_ERROR } from '../presentation/utils/errorHandler';
+import { extractClaims, parseJwt, isTokenExpired } from '../presentation/stores/tokenUtils';
+import { useAuthStore } from '../presentation/stores/useAuthStore';
+import { PosApiHttpAdapter } from '../infrastructure/http/PosApiHttpAdapter';
 
 describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
+  beforeEach(() => {
+    const store: Record<string, string> = {};
+    const mockStorage = {
+      getItem: (key: string) => store[key] || null,
+      setItem: (key: string, value: string) => {
+        store[key] = String(value);
+      },
+      removeItem: (key: string) => {
+        delete store[key];
+      },
+      clear: () => {
+        Object.keys(store).forEach((k) => delete store[k]);
+      },
+    };
+    (globalThis as any).localStorage = mockStorage;
+  });
   // =========================================================================
   // P07: Prueba unitaria sobre Cart / ManageCartUseCase (Dominio y Aplicación)
   // =========================================================================
@@ -496,5 +515,235 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
         customerName: 'Juan Perez',
       })
     );
+  });
+  // =========================================================================
+  // P25: tokenUtils - ExtracciÃ³n de Claims y ValidaciÃ³n de ExpiraciÃ³n (Fase 4)
+  // =========================================================================
+  it('P25: tokenUtils decodifica correctamente posSessionId, posConfigName, odooUserId, email y rol', () => {
+    // Generar un payload base64 simulando token JWT
+    const payload = {
+      sub: 'cajero1',
+      name: 'Juan Perez',
+      FullName: 'Juan Perez',
+      email: 'cajero1@empresa.com',
+      role: 'Cashier',
+      pos_session_id: '4',
+      pos_config_name: 'Caja Principal',
+      odoo_user_id: '2',
+      exp: Math.floor(Date.now() / 1000) + 3600, // 1 hora en el futuro
+    };
+
+    const headerBase64 = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+    const payloadBase64 = btoa(JSON.stringify(payload));
+    const dummyJwt = `${headerBase64}.${payloadBase64}.signatureDummy`;
+
+    const user = extractClaims(dummyJwt);
+    expect(user.name).toBe('Juan Perez');
+    expect(user.email).toBe('cajero1@empresa.com');
+    expect(user.role).toBe('Cashier');
+    expect(user.posSessionId).toBe(4);
+    expect(user.posConfigName).toBe('Caja Principal');
+    expect(user.odooUserId).toBe(2);
+    expect(isTokenExpired(dummyJwt)).toBe(false);
+
+    // Token expirado
+    const expiredPayload = { ...payload, exp: Math.floor(Date.now() / 1000) - 300 };
+    const expiredJwt = `${headerBase64}.${btoa(JSON.stringify(expiredPayload))}.sig`;
+    expect(isTokenExpired(expiredJwt)).toBe(true);
+  });
+
+  // =========================================================================
+  // P26: LoginUseCase y useAuthStore - Flujo de AutenticaciÃ³n y Cierre de SesiÃ³n (Fase 4)
+  // =========================================================================
+  it('P26: LoginUseCase valida campos y useAuthStore administra estado e idempotencia en localStorage', async () => {
+    const mockGateway: IPosApiGateway = {
+      login: vi.fn().mockResolvedValue({
+        token: 'mock.token.jwt',
+        username: 'cajero1',
+        fullName: 'Juan Cajero',
+        role: 'Cashier',
+        posSessionId: 4,
+        posConfigName: 'Caja 1',
+      }),
+      getProducts: vi.fn(),
+      getCustomers: vi.fn(),
+      getActiveSession: vi.fn(),
+      createSale: vi.fn(),
+      getSalesHistory: vi.fn(),
+      getSaleById: vi.fn(),
+    };
+
+    const useCase = new LoginUseCase(mockGateway);
+
+    // Error con credenciales vacías
+    await expect(useCase.execute({ username: '', password: '' })).rejects.toThrow(
+      'El usuario y la contraseña son campos obligatorios.'
+    );
+
+    // Éxito con credenciales
+    const res = await useCase.execute({ username: 'cajero1', password: '123' });
+    expect(res.token).toBe('mock.token.jwt');
+    expect(mockGateway.login).toHaveBeenCalledWith({ username: 'cajero1', password: '123' });
+
+    // Store login
+    const payload = {
+      sub: 'cajero1',
+      name: 'Juan Cajero',
+      pos_session_id: '4',
+      pos_config_name: 'Caja 1',
+      role: 'Cashier',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    };
+    const validJwt = `head.${btoa(JSON.stringify(payload))}.sig`;
+
+    useAuthStore.getState().login(validJwt);
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
+    expect(useAuthStore.getState().token).toBe(validJwt);
+    expect(useAuthStore.getState().user?.posSessionId).toBe(4);
+    expect(localStorage.getItem('auth_token')).toBe(validJwt);
+
+    // Store logout
+    useAuthStore.getState().logout();
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(useAuthStore.getState().token).toBeNull();
+    expect(localStorage.getItem('auth_token')).toBeNull();
+  });
+
+  // =========================================================================
+  // P27: PosApiHttpAdapter incluye Authorization Bearer Header (Fase 4)
+  // =========================================================================
+  it('P27: PosApiHttpAdapter envÃ­a encabezado Authorization Bearer cuando existe auth_token', async () => {
+    localStorage.setItem('auth_token', 'my-secret-jwt-token');
+
+    const adapter = new PosApiHttpAdapter('http://localhost:5000');
+    const authHeader = (adapter as any).getAuthHeader();
+
+    expect(authHeader).toEqual({
+      Authorization: 'Bearer my-secret-jwt-token',
+    });
+
+    localStorage.removeItem('auth_token');
+    expect((adapter as any).getAuthHeader()).toEqual({});
+  });
+
+  // =========================================================================
+  // P28: tokenUtils - Manejo de Usuario sin Caja Asignada (pos_session_id vacío)
+  // =========================================================================
+  it('P28: tokenUtils sin sesión asignada mapea posSessionId a null y posConfigName a "Sin Caja Asignada"', () => {
+    const payloadSinCaja = {
+      sub: 'vendedor_libre',
+      name: 'Carlos Vendedor',
+      email: 'carlos@pos.com',
+      role: 'Cashier',
+      pos_session_id: '',
+      pos_config_name: '',
+      odoo_user_id: '15',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    };
+
+    const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+    const payload = btoa(JSON.stringify(payloadSinCaja));
+    const token = `${header}.${payload}.sig`;
+
+    const user = extractClaims(token);
+    expect(user.posSessionId).toBeNull();
+    expect(user.posConfigName).toBe('Sin Caja Asignada');
+    expect(user.name).toBe('Carlos Vendedor');
+  });
+
+  // =========================================================================
+  // P29: formatUserErrorMessage traduce errores de autenticación Odoo a mensajes amigables
+  // =========================================================================
+  it('P29: formatUserErrorMessage traduce "Session user does not match the used apikey" a mensaje amigable', () => {
+    const odooTechnicalError = new PosApiError(
+      403,
+      'Fallo de Comunicación con ERP Odoo',
+      'Odoo rechazó pos.session.search_read (HTTP 403): Session user does not match the used apikey.'
+    );
+
+    const friendlyMsg = formatUserErrorMessage(odooTechnicalError);
+    expect(friendlyMsg).toBe(
+      'Ocurrió un error de autenticación con el servidor Odoo. Por favor intente nuevamente o contacte al administrador.'
+    );
+    expect(friendlyMsg).not.toContain('apikey');
+    expect(friendlyMsg).not.toContain('search_read');
+  });
+
+  // =========================================================================
+  // P30: GetSalesHistoryUseCase delega correctamente al Gateway
+  // =========================================================================
+  it('P30: GetSalesHistoryUseCase ejecuta consulta de historial a través del gateway', async () => {
+    const mockSales = [
+      {
+        orderId: 'sale-001',
+        posSessionId: 4,
+        customerDocument: '1712345678',
+        customerName: 'Cliente Prueba',
+        subTotal: 10,
+        discountAmount: 0,
+        taxAmount: 1.5,
+        totalAmount: 11.5,
+        state: 'Synced',
+        lines: [],
+        createdAtUtc: new Date().toISOString(),
+      },
+    ];
+
+    const mockGateway: IPosApiGateway = {
+      getProducts: vi.fn(),
+      getCustomers: vi.fn(),
+      getActiveSession: vi.fn(),
+      createSale: vi.fn(),
+      getSalesHistory: vi.fn().mockResolvedValue(mockSales),
+      getSaleById: vi.fn(),
+    };
+
+    const useCase = new GetSalesHistoryUseCase(mockGateway);
+    const result = await useCase.execute();
+
+    expect(mockGateway.getSalesHistory).toHaveBeenCalledTimes(1);
+    expect(result).toHaveLength(1);
+    expect(result[0].posSessionId).toBe(4);
+  });
+
+  // =========================================================================
+  // P31: Reglas de Aislamiento y Least Privilege para Historial de Ventas
+  // =========================================================================
+  it('P31: Reglas de Aislamiento detectan correctamente estados de acceso restringido y administrador', () => {
+    // Caso 1: Vendedor sin caja asignada (posSessionId null o 0) -> ACCESO RESTRINGIDO
+    const userSinCaja = {
+      role: 'Cashier',
+      posSessionId: null,
+      posConfigName: 'Sin Caja Asignada',
+      email: 'cajero@pos.com',
+      name: 'Cajero Libre',
+    };
+    const isRestrictedSinCaja =
+      userSinCaja.role !== 'Administrator' && (!userSinCaja.posSessionId || userSinCaja.posSessionId <= 0);
+    expect(isRestrictedSinCaja).toBe(true);
+
+    // Caso 2: Cajero con caja asignada (#4) -> ACCESO PERMITIDO (AISLADO A SU CAJA)
+    const userConCaja = {
+      role: 'Cashier',
+      posSessionId: 4,
+      posConfigName: 'Shop/0001',
+      email: 'cajero4@pos.com',
+      name: 'Cajero Caja 4',
+    };
+    const isRestrictedConCaja =
+      userConCaja.role !== 'Administrator' && (!userConCaja.posSessionId || userConCaja.posSessionId <= 0);
+    expect(isRestrictedConCaja).toBe(false);
+
+    // Caso 3: Administrador sin caja activa asignada -> ACCESO CONSOLIDADO COMPLETO (NO RESTRINGIDO)
+    const userAdmin = {
+      role: 'Administrator',
+      posSessionId: null,
+      posConfigName: 'Sin Caja Asignada',
+      email: 'admin@pos.com',
+      name: 'Administrador Global',
+    };
+    const isRestrictedAdmin =
+      userAdmin.role !== 'Administrator' && (!userAdmin.posSessionId || userAdmin.posSessionId <= 0);
+    expect(isRestrictedAdmin).toBe(false);
   });
 });

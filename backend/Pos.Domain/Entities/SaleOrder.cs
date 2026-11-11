@@ -26,6 +26,7 @@ public class SaleOrder
     public string CustomerDocument { get; }
     public string CustomerName { get; }
     public int? PartnerId { get; }
+    public int? UserId { get; }
     public IDiscountPolicy DiscountPolicy { get; private set; }
     public ISaleOrderState State { get; private set; }
     public DateTime CreatedAtUtc { get; }
@@ -69,7 +70,8 @@ public class SaleOrder
         string customerName = "Consumidor Final",
         IDiscountPolicy? discountPolicy = null,
         Guid? id = null,
-        int? partnerId = null)
+        int? partnerId = null,
+        int? userId = null)
     {
         if (posSessionId <= 0)
             throw new DomainValidationException(nameof(PosSessionId), "La sesión de POS es requerida y debe ser un ID válido.");
@@ -82,6 +84,7 @@ public class SaleOrder
         State = new DraftState();
         CreatedAtUtc = DateTime.UtcNow;
         PartnerId = partnerId;
+        UserId = userId;
     }
 
     /// <summary>

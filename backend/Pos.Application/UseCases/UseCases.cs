@@ -104,7 +104,8 @@ public class CreateSaleUseCase
         }
 
         // 2. Validación de Sesión Activa de POS
-        var activeSession = await _odooGateway.GetActiveSessionAsync(cancellationToken);
+        var activeSession = await _odooGateway.GetActiveSessionAsync(command.PosSessionId, cancellationToken)
+            ?? await _odooGateway.GetActiveSessionAsync(cancellationToken);
         if (activeSession == null || !activeSession.IsOpen || activeSession.Id != command.PosSessionId)
         {
             throw new ApplicationValidationException(nameof(command.PosSessionId),
@@ -134,13 +135,19 @@ public class CreateSaleUseCase
                 $"La política de descuento '{command.DiscountType}' no está autorizada por el sistema (RF-08 / RN-04).")
         };
 
+        var effectiveUserId = command.UserId ?? (activeSession.UserId > 0 ? activeSession.UserId : null);
+        var effectiveOperatorName = !string.IsNullOrWhiteSpace(command.OperatorName)
+            ? command.OperatorName
+            : (!string.IsNullOrWhiteSpace(activeSession.UserName) ? activeSession.UserName : "Cajero POS");
+
         var order = new SaleOrder(
             command.PosSessionId,
             command.CustomerDocument,
             command.CustomerName,
             discountPolicy,
             id: DeriveOrderId(command.IdempotencyKey),
-            partnerId: command.PartnerId);
+            partnerId: command.PartnerId,
+            userId: effectiveUserId);
 
         // 5. RN-03: Cargar precio y regla fiscal oficiales desde Odoo SOLO para los productos solicitados.
         //    Nunca se confía en precios enviados por el cliente.
@@ -229,7 +236,7 @@ public class CreateSaleUseCase
             PaymentMethod: paymentResult.MethodName,
             AmountPaid: paymentResult.AmountPaid,
             SessionName: activeSession?.Name ?? $"Sesión #{order.PosSessionId}",
-            OperatorName: !string.IsNullOrWhiteSpace(activeSession?.UserName) ? activeSession.UserName : "Cajero POS",
+            OperatorName: effectiveOperatorName,
             PartnerId: order.PartnerId
         );
 
@@ -274,7 +281,12 @@ public class GetSalesHistoryUseCase
 
     public async Task<IReadOnlyList<SaleOrderResponseDto>> ExecuteAsync(CancellationToken cancellationToken = default)
     {
-        return await _historyRepository.GetAllSalesAsync(cancellationToken);
+        return await _historyRepository.GetSalesAsync(null, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<SaleOrderResponseDto>> ExecuteAsync(int? posSessionId, CancellationToken cancellationToken = default)
+    {
+        return await _historyRepository.GetSalesAsync(posSessionId, cancellationToken);
     }
 }
 

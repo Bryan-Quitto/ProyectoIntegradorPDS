@@ -107,14 +107,24 @@ public class SqliteSaleHistoryRepository : ISaleHistoryRepository
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<SaleOrderResponseDto>> GetAllSalesAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<SaleOrderResponseDto>> GetSalesAsync(int? posSessionId = null, CancellationToken cancellationToken = default)
     {
-        var records = await _dbContext.SaleAuditRecords
-            .AsNoTracking()
+        var query = _dbContext.SaleAuditRecords.AsNoTracking();
+        if (posSessionId.HasValue)
+        {
+            query = query.Where(s => s.PosSessionId == posSessionId.Value);
+        }
+
+        var records = await query
             .OrderByDescending(s => s.SyncedAtUtc)
             .ToListAsync(cancellationToken);
 
         return records.Select(MapToDto).ToList();
+    }
+
+    public async Task<IReadOnlyList<SaleOrderResponseDto>> GetAllSalesAsync(CancellationToken cancellationToken = default)
+    {
+        return await GetSalesAsync(null, cancellationToken);
     }
 
     public async Task<SaleOrderResponseDto?> GetSaleByIdAsync(Guid id, CancellationToken cancellationToken = default)

@@ -18,7 +18,10 @@ public interface IOdooPosGateway
     /// </summary>
     Task<IReadOnlyList<ProductDto>> GetProductsByIdsAsync(IReadOnlyCollection<int> productIds, CancellationToken cancellationToken = default);
 
+    Task<OdooUserAuthDto?> AuthenticateUserAsync(string username, string password, CancellationToken cancellationToken = default);
+
     Task<PosSessionDto?> GetActiveSessionAsync(CancellationToken cancellationToken = default);
+    Task<PosSessionDto?> GetActiveSessionAsync(int sessionId, CancellationToken cancellationToken = default);
     Task<OdooSyncResultDto> SyncSaleOrderAsync(SaleOrder saleOrder, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -45,5 +48,6 @@ public interface ISaleHistoryRepository
 {
     Task SaveSaleAsync(SaleOrderResponseDto sale, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<SaleOrderResponseDto>> GetAllSalesAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<SaleOrderResponseDto>> GetSalesAsync(int? posSessionId = null, CancellationToken cancellationToken = default);
     Task<SaleOrderResponseDto?> GetSaleByIdAsync(Guid id, CancellationToken cancellationToken = default);
 }

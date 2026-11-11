@@ -1,6 +1,8 @@
 import { Product } from '@/domain/Product';
 import {
   IPosApiGateway,
+  LoginRequest,
+  LoginResponse,
   PosSession,
   Customer,
   CreateSaleRequest,
@@ -18,7 +20,18 @@ export class PosApiHttpAdapter implements IPosApiGateway {
 
   private getAuthHeader(): Record<string, string> {
     if (typeof localStorage !== 'undefined') {
-      const auth = localStorage.getItem('auth_token');
+      let auth = localStorage.getItem('auth_token');
+      if (!auth) {
+        const tokensRaw = localStorage.getItem('tokens');
+        if (tokensRaw) {
+          try {
+            const parsed = JSON.parse(tokensRaw);
+            auth = parsed?.accessToken || parsed?.token || (typeof parsed === 'string' ? parsed : null);
+          } catch {
+            auth = tokensRaw;
+          }
+        }
+      }
       if (auth) {
         return { Authorization: `Bearer ${auth}` };
       }
@@ -71,6 +84,20 @@ export class PosApiHttpAdapter implements IPosApiGateway {
       }
       throw err;
     }
+  }
+
+  public async login(request: LoginRequest): Promise<LoginResponse> {
+    const url = `${this._baseUrl}/api/auth/login`;
+    const response = await this.safeFetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+
+    return await this.handleResponse<LoginResponse>(response);
   }
 
   public async getProducts(search?: string): Promise<Product[]> {

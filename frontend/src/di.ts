@@ -1,5 +1,6 @@
 import { PosApiHttpAdapter } from '@/infrastructure/http/PosApiHttpAdapter';
 import {
+  LoginUseCase,
   GetSalesHistoryUseCase,
   CheckoutSaleUseCase,
   SearchCatalogUseCase,
@@ -23,6 +24,7 @@ import {
 export const apiAdapter = new PosApiHttpAdapter();
 
 // Casos de uso ensamblados y listos para ser consumidos por la capa de presentación
+export const loginUseCase = new LoginUseCase(apiAdapter);
 export const searchCatalogUseCase = new SearchCatalogUseCase(apiAdapter);
 export const searchCustomersUseCase = new SearchCustomersUseCase(apiAdapter);
 export const getActiveSessionUseCase = new GetActiveSessionUseCase(apiAdapter);

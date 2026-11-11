@@ -82,7 +82,22 @@ export class PosApiError extends Error {
   }
 }
 
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  token: string;
+  username: string;
+  fullName: string;
+  role: string;
+  posSessionId?: number | null;
+  posConfigName?: string | null;
+}
+
 export interface IPosApiGateway {
+  login?(request: LoginRequest): Promise<LoginResponse>;
   getProducts(search?: string): Promise<Product[]>;
   getCustomers(search?: string): Promise<Customer[]>;
   getActiveSession(): Promise<PosSession | null>;

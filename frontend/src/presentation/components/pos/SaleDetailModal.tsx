@@ -24,6 +24,7 @@ interface SaleDetailModalProps {
   onClose: () => void;
   sale: SaleOrderDetailDto | null;
   loading?: boolean;
+  error?: string | null;
 }
 
 export const SaleDetailModal: React.FC<SaleDetailModalProps> = ({
@@ -31,7 +32,34 @@ export const SaleDetailModal: React.FC<SaleDetailModalProps> = ({
   onClose,
   sale,
   loading = false,
+  error = null,
 }) => {
+  if (error && !loading) {
+    return (
+      <Dialog
+        open={open}
+        onOpenChange={onClose}
+        title="Acceso Denegado o Error"
+        className="max-w-md"
+      >
+        <div className="p-6 text-center space-y-4">
+          <div className="mx-auto w-12 h-12 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600">
+            <Lock className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-slate-800">No autorizado para consultar esta orden</h3>
+            <p className="text-xs text-slate-600 mt-2 leading-relaxed bg-rose-50/70 border border-rose-100 rounded-lg p-3">
+              {error}
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={onClose} className="w-full text-xs">
+            Cerrar
+          </Button>
+        </div>
+      </Dialog>
+    );
+  }
+
   if (!sale && !loading) return null;
 
   const formatCurrency = (val: number | undefined) => `$${(val ?? 0).toFixed(2)}`;

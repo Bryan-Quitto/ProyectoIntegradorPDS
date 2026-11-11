@@ -237,6 +237,112 @@ public class OdooJson2PosAdapter : IOdooPosGateway
     }
 
     // ------------------------------------------------------------------
+    // Autenticación de Operadores / Vendedores con Odoo 20 (Fase 4)
+    // ------------------------------------------------------------------
+
+    public async Task<OdooUserAuthDto?> AuthenticateUserAsync(string username, string password, CancellationToken cancellationToken = default)
+    {
+        var authPayload = new
+        {
+            jsonrpc = "2.0",
+            @params = new
+            {
+                db = _options.Database,
+                login = username,
+                password = password
+            }
+        };
+
+        var jsonBody = JsonSerializer.Serialize(authPayload);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "web/session/authenticate")
+        {
+            Content = new StringContent(jsonBody, System.Text.Encoding.UTF8, "application/json")
+        };
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.SendAsync(request, cancellationToken);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            throw new OdooCommunicationException($"No fue posible conectar con Odoo para autenticar al usuario '{username}': {ex.Message}", ex);
+        }
+
+        using (response)
+        {
+            var raw = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Odoo devolvió HTTP {StatusCode} al autenticar a '{Username}': {Raw}", response.StatusCode, username, raw);
+                return null;
+            }
+
+            JsonNode? rootNode = null;
+            try
+            {
+                rootNode = JsonNode.Parse(raw);
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+
+            if (rootNode == null || rootNode["error"] != null)
+            {
+                _logger.LogWarning("Autenticación fallida en Odoo para '{Username}'. Error: {Error}", username, rootNode?["error"]?.ToJsonString());
+                return null;
+            }
+
+            var result = rootNode["result"];
+            if (result == null)
+            {
+                return null;
+            }
+
+            var uid = result["uid"]?.GetValue<int>() ?? 0;
+            if (uid <= 0)
+            {
+                return null;
+            }
+
+            var name = ReadString(result["name"]) is { Length: > 0 } n ? n : username;
+            var isAdmin = result["is_admin"]?.GetValue<bool>() == true || result["is_system"]?.GetValue<bool>() == true;
+            var role = isAdmin ? "Administrator" : "Cashier";
+
+            // Buscar la sesión activa de POS asignada específicamente a este usuario
+            var userSessions = await CallAsync("pos.session", "search_read", new
+            {
+                domain = new object[]
+                {
+                    new object[] { "state", "=", "opened" },
+                    new object[] { "user_id", "=", uid }
+                },
+                fields = new[] { "id", "name", "state", "user_id", "config_id" },
+                limit = 1
+            }, cancellationToken);
+
+            var sessionRow = userSessions?.AsArray().FirstOrDefault();
+
+            int? posSessionId = null;
+            string? posConfigName = "Sin Caja Asignada";
+
+            if (sessionRow != null)
+            {
+                posSessionId = sessionRow["id"]!.GetValue<int>();
+                var (_, configName) = ReadMany2One(sessionRow["config_id"]);
+                var sessionName = ReadString(sessionRow["name"]);
+
+                posConfigName = !string.IsNullOrWhiteSpace(configName)
+                    ? configName
+                    : (!string.IsNullOrWhiteSpace(sessionName) ? sessionName : "Caja Principal");
+            }
+
+            return new OdooUserAuthDto(uid, name, username, role, posSessionId, posConfigName);
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Sesión POS (Sección 14)
     // ------------------------------------------------------------------
 
@@ -245,6 +351,28 @@ public class OdooJson2PosAdapter : IOdooPosGateway
         var result = await CallAsync("pos.session", "search_read", new
         {
             domain = new object[] { new object[] { "state", "=", "opened" } },
+            fields = new[] { "id", "name", "state", "user_id" },
+            limit = 1
+        }, cancellationToken);
+
+        var first = result?.AsArray().FirstOrDefault();
+        if (first is null) return null;
+
+        var state = ReadString(first["state"]);
+        var (userId, userName) = ReadMany2One(first["user_id"]);
+
+        return new PosSessionDto(first["id"]!.GetValue<int>(), ReadString(first["name"]), state, userId, state == "opened", userName);
+    }
+
+    public async Task<PosSessionDto?> GetActiveSessionAsync(int sessionId, CancellationToken cancellationToken = default)
+    {
+        var result = await CallAsync("pos.session", "search_read", new
+        {
+            domain = new object[]
+            {
+                new object[] { "id", "=", sessionId },
+                new object[] { "state", "=", "opened" }
+            },
             fields = new[] { "id", "name", "state", "user_id" },
             limit = 1
         }, cancellationToken);
@@ -304,6 +432,23 @@ public class OdooJson2PosAdapter : IOdooPosGateway
             if (state is not ("paid" or "done" or "invoiced"))
             {
                 return new OdooSyncResultDto(false, reference, odooId, $"Odoo registró la orden #{odooId} pero en estado '{state}', no pagada.");
+            }
+
+            // Asignar explícitamente el usuario vendedor responsable a la orden en Odoo
+            if (saleOrder.UserId.HasValue && saleOrder.UserId.Value > 0)
+            {
+                try
+                {
+                    await CallAsync("pos.order", "write", new
+                    {
+                        ids = new[] { odooId },
+                        vals = new { user_id = saleOrder.UserId.Value }
+                    }, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "No se pudo actualizar user_id={UserId} en la orden #{OdooId} de Odoo.", saleOrder.UserId.Value, odooId);
+                }
             }
 
             // Descontar existencias vendidas directamente en Odoo para sincronizacion inmediata de stock
@@ -471,7 +616,21 @@ public class OdooJson2PosAdapter : IOdooPosGateway
                 }
                 catch (JsonException) { /* cuerpo no JSON: se usa tal cual */ }
 
-                throw new OdooCommunicationException($"Odoo rechazó {model}.{method} (HTTP {(int)response.StatusCode}): {message}");
+                _logger.LogWarning("Odoo devolvió error HTTP {StatusCode} en {Model}.{Method}: {Raw}", response.StatusCode, model, method, raw);
+
+                if ((int)response.StatusCode == 403 ||
+                    message.Contains("Session user does not match", StringComparison.OrdinalIgnoreCase) ||
+                    message.Contains("apikey", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new OdooCommunicationException("El servidor Odoo denegó el acceso por permisos o credenciales no válidas.");
+                }
+
+                if ((int)response.StatusCode == 502 || (int)response.StatusCode == 503)
+                {
+                    throw new OdooCommunicationException("El servidor Odoo no se encuentra disponible temporalmente. Intente más tarde.");
+                }
+
+                throw new OdooCommunicationException($"El servidor Odoo no pudo procesar la solicitud ({model}.{method}): {message}");
             }
 
             return string.IsNullOrWhiteSpace(raw) ? null : JsonNode.Parse(raw);

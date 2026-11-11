@@ -13,7 +13,7 @@ export interface AuthState {
 
 function getStoredToken(): string | null {
   try {
-    const raw = localStorage.getItem('tokens');
+    const raw = localStorage.getItem('auth_token') || localStorage.getItem('tokens');
     if (!raw) return null;
     let tokenStr: string | null = null;
     try {
@@ -25,6 +25,7 @@ function getStoredToken(): string | null {
 
     if (tokenStr && isTokenExpired(tokenStr)) {
       localStorage.removeItem('tokens');
+      localStorage.removeItem('auth_token');
       return null;
     }
 
@@ -55,6 +56,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
 
     localStorage.setItem('tokens', JSON.stringify({ accessToken: actualToken }));
+    localStorage.setItem('auth_token', actualToken);
     const user = extractClaims(actualToken);
     set({
       token: actualToken,
@@ -65,6 +67,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: () => {
     localStorage.removeItem('tokens');
+    localStorage.removeItem('auth_token');
     set({
       token: null,
       user: null,

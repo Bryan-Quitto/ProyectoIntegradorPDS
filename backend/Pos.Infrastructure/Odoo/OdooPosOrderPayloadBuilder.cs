@@ -17,6 +17,7 @@ public class OdooPosOrderPayloadBuilder
     private DateTime _dateOrderUtc = DateTime.UtcNow;
     private int? _paymentMethodId;
     private int? _partnerId;
+    private int? _userId;
     private readonly List<Dictionary<string, object>> _lines = new();
 
     public OdooPosOrderPayloadBuilder WithUuid(Guid uuid)
@@ -28,6 +29,12 @@ public class OdooPosOrderPayloadBuilder
     public OdooPosOrderPayloadBuilder WithSessionId(int sessionId)
     {
         _sessionId = sessionId;
+        return this;
+    }
+
+    public OdooPosOrderPayloadBuilder WithUserId(int? userId)
+    {
+        _userId = userId;
         return this;
     }
 
@@ -98,7 +105,8 @@ public class OdooPosOrderPayloadBuilder
             .WithSessionId(order.PosSessionId)
             .WithDateOrder(order.CreatedAtUtc)
             .WithTotals(order.TaxAmount, order.TotalAmount)
-            .WithPartnerId(order.PartnerId);
+            .WithPartnerId(order.PartnerId)
+            .WithUserId(order.UserId);
 
         // Los montos fiscales los determina exclusivamente el Dominio.
         foreach (var line in order.Lines)
@@ -158,6 +166,11 @@ public class OdooPosOrderPayloadBuilder
         if (_partnerId.HasValue && _partnerId.Value > 0)
         {
             payload["partner_id"] = _partnerId.Value;
+        }
+
+        if (_userId.HasValue && _userId.Value > 0)
+        {
+            payload["user_id"] = _userId.Value;
         }
 
         return payload;

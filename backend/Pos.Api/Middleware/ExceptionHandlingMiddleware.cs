@@ -56,7 +56,7 @@ public class ExceptionHandlingMiddleware
             OdooCommunicationException oce => (
                 StatusCodes.Status502BadGateway,
                 "Fallo de Comunicación con ERP Odoo (RN-07)",
-                oce.Message,
+                FormatFriendlyOdooMessage(oce.Message),
                 "https://tools.ietf.org/html/rfc7231#section-6.6.3"
             ),
             _ => (
@@ -80,5 +80,28 @@ public class ExceptionHandlingMiddleware
 
         var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
         return context.Response.WriteAsync(JsonSerializer.Serialize(problemDetails, options));
+    }
+
+    private static string FormatFriendlyOdooMessage(string? rawMessage)
+    {
+        if (string.IsNullOrWhiteSpace(rawMessage))
+            return "No fue posible completar la operación con el servidor Odoo ERP.";
+
+        if (rawMessage.Contains("Session user does not match", StringComparison.OrdinalIgnoreCase) ||
+            rawMessage.Contains("apikey", StringComparison.OrdinalIgnoreCase) ||
+            rawMessage.Contains("HTTP 403", StringComparison.OrdinalIgnoreCase) ||
+            rawMessage.Contains("denegó el acceso", StringComparison.OrdinalIgnoreCase))
+        {
+            return "El servidor Odoo denegó la operación por permisos o credenciales no válidas. Contacte al administrador.";
+        }
+
+        if (rawMessage.Contains("HTTP 502", StringComparison.OrdinalIgnoreCase) ||
+            rawMessage.Contains("HTTP 503", StringComparison.OrdinalIgnoreCase) ||
+            rawMessage.Contains("No fue posible conectar", StringComparison.OrdinalIgnoreCase))
+        {
+            return "No fue posible establecer comunicación con el servidor Odoo ERP. Verifique que el servicio esté activo.";
+        }
+
+        return rawMessage;
     }
 }

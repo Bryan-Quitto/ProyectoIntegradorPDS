@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+using NSubstitute.ExceptionExtensions;
 using FluentAssertions;
 using NSubstitute;
 using Pos.Application.DTOs;
@@ -382,23 +384,22 @@ public class PosTests
     }
 
     // =========================================================================
-    // P11 y P12: Autenticación Desacoplada vía Caso de Uso (ARQ-01 / ARQ-02)
+    // P11, P12, P22, P23: AutenticaciÃ³n de Operadores / Vendedores con Odoo 20 (Fase 4)
     // =========================================================================
     [Fact]
     public async Task P11_LoginOperador_CredencialesValidas_GeneraTokenCorrectamente()
     {
         // Arrange
-        var operatorRepo = Substitute.For<IOperatorRepository>();
+        var odooGateway = Substitute.For<IOdooPosGateway>();
         var jwtProvider = Substitute.For<IJwtProvider>();
 
-        operatorRepo.HashPassword("securePassword123").Returns("hash_123");
-        operatorRepo.GetActiveOperatorByCredentialsAsync("cashier1", "hash_123", Arg.Any<CancellationToken>())
-            .Returns(new OperatorDto(1, "cashier1", "Cajero Principal", "Cashier", true));
+        odooGateway.AuthenticateUserAsync("cashier1", "securePassword123", Arg.Any<CancellationToken>())
+            .Returns(new OdooUserAuthDto(2, "Cajero Principal", "cashier1", "Cashier", 4, "Caja Principal"));
 
-        jwtProvider.GenerateToken("cashier1", "Cajero Principal", "Cashier")
+        jwtProvider.GenerateToken("cashier1", "Cajero Principal", "Cashier", 4, "Caja Principal", 2)
             .Returns("jwt.mock.token.xyz");
 
-        var useCase = new LoginOperatorUseCase(operatorRepo, jwtProvider);
+        var useCase = new LoginOperatorUseCase(odooGateway, jwtProvider);
         var command = new LoginCommand("cashier1", "securePassword123");
 
         // Act
@@ -408,21 +409,23 @@ public class PosTests
         result.Should().NotBeNull();
         result!.Token.Should().Be("jwt.mock.token.xyz");
         result.Username.Should().Be("cashier1");
+        result.FullName.Should().Be("Cajero Principal");
         result.Role.Should().Be("Cashier");
+        result.PosSessionId.Should().Be(4);
+        result.PosConfigName.Should().Be("Caja Principal");
     }
 
     [Fact]
     public async Task P12_LoginOperador_CredencialesInvalidas_RetornaNull()
     {
         // Arrange
-        var operatorRepo = Substitute.For<IOperatorRepository>();
+        var odooGateway = Substitute.For<IOdooPosGateway>();
         var jwtProvider = Substitute.For<IJwtProvider>();
 
-        operatorRepo.HashPassword("wrongPass").Returns("hash_wrong");
-        operatorRepo.GetActiveOperatorByCredentialsAsync("cashier1", "hash_wrong", Arg.Any<CancellationToken>())
-            .Returns((OperatorDto?)null);
+        odooGateway.AuthenticateUserAsync("cashier1", "wrongPass", Arg.Any<CancellationToken>())
+            .Returns((OdooUserAuthDto?)null);
 
-        var useCase = new LoginOperatorUseCase(operatorRepo, jwtProvider);
+        var useCase = new LoginOperatorUseCase(odooGateway, jwtProvider);
         var command = new LoginCommand("cashier1", "wrongPass");
 
         // Act
@@ -430,9 +433,92 @@ public class PosTests
 
         // Assert
         result.Should().BeNull();
-        jwtProvider.DidNotReceive().GenerateToken(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>());
+        jwtProvider.DidNotReceive().GenerateToken(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<string>(), Arg.Any<int>());
     }
 
+    [Fact]
+    public async Task P22_LoginOperador_SinSesionAbiertaEnOdoo_PermiteLoginConSesionNula()
+    {
+        // Arrange
+        var odooGateway = Substitute.For<IOdooPosGateway>();
+        var jwtProvider = Substitute.For<IJwtProvider>();
+
+        odooGateway.AuthenticateUserAsync("vendedor_sin_caja", "pass123", Arg.Any<CancellationToken>())
+            .Returns(new OdooUserAuthDto(10, "Vendedor Sin Caja", "vendedor_sin_caja", "Cashier", null, "Sin Caja Asignada"));
+
+        jwtProvider.GenerateToken("vendedor_sin_caja", "Vendedor Sin Caja", "Cashier", null, "Sin Caja Asignada", 10)
+            .Returns("jwt.mock.token.sin_caja");
+
+        var useCase = new LoginOperatorUseCase(odooGateway, jwtProvider);
+        var command = new LoginCommand("vendedor_sin_caja", "pass123");
+
+        // Act
+        var result = await useCase.ExecuteAsync(command);
+
+        // Assert: Permite login sin caja asignada (modo consulta)
+        result.Should().NotBeNull();
+        result!.Token.Should().Be("jwt.mock.token.sin_caja");
+        result.PosSessionId.Should().BeNull();
+        result.PosConfigName.Should().Be("Sin Caja Asignada");
+    }
+
+    [Fact]
+    public void P23b_JwtService_GeneratesToken_WithoutSession_EmitsEmptySessionClaim()
+    {
+        // Arrange
+        var options = Microsoft.Extensions.Options.Options.Create(new Pos.Infrastructure.Security.JwtOptions
+        {
+            SecurityKey = "UnSecretoSuperSeguroParaElProyectoIntegradorPDS2026!ClaveLarga",
+            ValidIssuer = "PosApi",
+            ValidAudience = "PosWebClient",
+            ExpirationMinutes = 60
+        });
+        var jwtService = new Pos.Infrastructure.Security.JwtService(options);
+
+        // Act: Usuario sin caja asignada (null)
+        var token = jwtService.GenerateToken("cajero_sin_caja@empresa.com", "Carlos Cajero", "Cashier", null, null, 18);
+
+        // Assert
+        token.Should().NotBeNullOrWhiteSpace();
+
+        var handler = new Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler();
+        var jwt = handler.ReadJsonWebToken(token);
+
+        jwt.Claims.First(c => c.Type == "pos_session_id").Value.Should().Be("");
+        jwt.Claims.First(c => c.Type == "pos_config_name").Value.Should().Be("Sin Caja Asignada");
+    }
+
+    [Fact]
+    public void P23_JwtService_GeneratesToken_WithAllRequiredClaims()
+    {
+        // Arrange
+        var options = Microsoft.Extensions.Options.Options.Create(new Pos.Infrastructure.Security.JwtOptions
+        {
+            SecurityKey = "UnSecretoSuperSeguroParaElProyectoIntegradorPDS2026!ClaveLarga",
+            ValidIssuer = "PosApi",
+            ValidAudience = "PosWebClient",
+            ExpirationMinutes = 60
+        });
+        var jwtService = new Pos.Infrastructure.Security.JwtService(options);
+
+        // Act
+        var token = jwtService.GenerateToken("cajero@empresa.com", "Juan Cajero", "Cashier", 7, "Caja Norte", 15);
+
+        // Assert
+        token.Should().NotBeNullOrWhiteSpace();
+
+        var handler = new Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler();
+        var jwt = handler.ReadJsonWebToken(token);
+
+        jwt.Issuer.Should().Be("PosApi");
+        jwt.Audiences.Should().Contain("PosWebClient");
+        jwt.Claims.First(c => c.Type == "FullName").Value.Should().Be("Juan Cajero");
+        jwt.Claims.First(c => c.Type == "pos_session_id").Value.Should().Be("7");
+        jwt.Claims.First(c => c.Type == "pos_config_name").Value.Should().Be("Caja Norte");
+        jwt.Claims.First(c => c.Type == "odoo_user_id").Value.Should().Be("15");
+        jwt.Claims.First(c => c.Type == "email").Value.Should().Be("cajero@empresa.com");
+    }
     // =========================================================================
     // P09 (Turno 4 - Bryan): Venta Real de 2 Productos y Pago en Efectivo (Anexo F)
     // [GUÍA BRYAN - TURNO 4 - QA / ANEXO F / INTEGRACIÓN ATÓMICA SIN PARCHES]:
@@ -785,5 +871,106 @@ public class PosTests
 
         payload.Should().ContainKey("partner_id");
         payload["partner_id"].Should().Be(42);
+    }
+
+    // =========================================================================
+    // P22: Aislamiento de Historial de Ventas por Caja/Sesión (Least Privilege)
+    // =========================================================================
+    [Fact]
+    public async Task P22_GetSalesHistoryUseCase_FiltersBySessionId_WhenCashierSessionProvided()
+    {
+        var historyRepo = Substitute.For<ISaleHistoryRepository>();
+        const int cashierSessionId = 4;
+        var filteredSales = new List<SaleOrderResponseDto>
+        {
+            new(Guid.NewGuid(), cashierSessionId, "1712345678", "Juan Perez", 20m, 0m, 3m, 23m, "Synced", "260-1-000001", 1, DateTime.UtcNow, new List<SaleOrderLineDto>())
+        };
+
+        historyRepo.GetSalesAsync(cashierSessionId, Arg.Any<CancellationToken>())
+            .Returns(filteredSales);
+
+        var useCase = new GetSalesHistoryUseCase(historyRepo);
+
+        // Act
+        var result = await useCase.ExecuteAsync(cashierSessionId);
+
+        // Assert
+        result.Should().HaveCount(1);
+        result[0].PosSessionId.Should().Be(cashierSessionId);
+        await historyRepo.Received(1).GetSalesAsync(cashierSessionId, Arg.Any<CancellationToken>());
+    }
+
+    // =========================================================================
+    // P23: Historial Consolidado para Administrador (posSessionId = null)
+    // =========================================================================
+    [Fact]
+    public async Task P23_GetSalesHistoryUseCase_ReturnsAllSales_WhenAdminRequestsConsolidatedHistory()
+    {
+        var historyRepo = Substitute.For<ISaleHistoryRepository>();
+        var allSales = new List<SaleOrderResponseDto>
+        {
+            new(Guid.NewGuid(), 4, "1712345678", "Cliente 1", 20m, 0m, 3m, 23m, "Synced", "260-1-000001", 1, DateTime.UtcNow, new List<SaleOrderLineDto>()),
+            new(Guid.NewGuid(), 5, "1790012345001", "Cliente 2", 50m, 5m, 6.75m, 51.75m, "Synced", "260-2-000001", 2, DateTime.UtcNow, new List<SaleOrderLineDto>())
+        };
+
+        historyRepo.GetSalesAsync(null, Arg.Any<CancellationToken>())
+            .Returns(allSales);
+
+        var useCase = new GetSalesHistoryUseCase(historyRepo);
+
+        // Act
+        var result = await useCase.ExecuteAsync(null);
+
+        // Assert
+        result.Should().HaveCount(2);
+        await historyRepo.Received(1).GetSalesAsync(null, Arg.Any<CancellationToken>());
+    }
+
+    // =========================================================================
+    // P24: Repositorio SQLite aísla estrictamente registros por PosSessionId
+    // =========================================================================
+    [Fact]
+    public async Task P24_SqliteSaleHistoryRepository_GetSalesAsync_FiltersAccuratelyByPosSessionId()
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<Pos.Infrastructure.Persistence.PosDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using var dbContext = new Pos.Infrastructure.Persistence.PosDbContext(options);
+        await dbContext.Database.EnsureCreatedAsync();
+
+        var repo = new Pos.Infrastructure.Persistence.SqliteSaleHistoryRepository(dbContext);
+
+        // Seed 2 sales in session 4, 1 sale in session 7
+        var saleSession4A = new SaleOrderResponseDto(Guid.NewGuid(), 4, "1712345678", "Cliente A", 10m, 0m, 1.5m, 11.5m, "Synced", "260-1-000001", 1, DateTime.UtcNow.AddMinutes(-10), new List<SaleOrderLineDto>());
+        var saleSession4B = new SaleOrderResponseDto(Guid.NewGuid(), 4, "1712345679", "Cliente B", 20m, 0m, 3.0m, 23.0m, "Synced", "260-1-000002", 2, DateTime.UtcNow.AddMinutes(-5), new List<SaleOrderLineDto>());
+        var saleSession7 = new SaleOrderResponseDto(Guid.NewGuid(), 7, "1790012345001", "Cliente C", 50m, 0m, 7.5m, 57.5m, "Synced", "260-2-000001", 3, DateTime.UtcNow, new List<SaleOrderLineDto>());
+
+        await repo.SaveSaleAsync(saleSession4A);
+        await repo.SaveSaleAsync(saleSession4B);
+        await repo.SaveSaleAsync(saleSession7);
+
+        // Act: Filter by Session 4 (Cajero Caja 4)
+        var session4Sales = await repo.GetSalesAsync(4);
+
+        // Act: Filter by Session 7 (Cajero Caja 7)
+        var session7Sales = await repo.GetSalesAsync(7);
+
+        // Act: Admin query (null -> todas las órdenes)
+        var allSales = await repo.GetSalesAsync(null);
+
+        // Assert: Caja 4 solo ve sus 2 ventas
+        session4Sales.Should().HaveCount(2);
+        session4Sales.Should().OnlyContain(s => s.PosSessionId == 4);
+
+        // Assert: Caja 7 solo ve su 1 venta
+        session7Sales.Should().HaveCount(1);
+        session7Sales[0].PosSessionId.Should().Be(7);
+
+        // Assert: Consolidado Admin ve las 3 ventas
+        allSales.Should().HaveCount(3);
     }
 }

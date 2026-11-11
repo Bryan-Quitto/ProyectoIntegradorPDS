@@ -10,6 +10,7 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '.
 import { Pagination } from '../components/ui/Pagination';
 import { SaleDetailModal } from '../components/pos/SaleDetailModal';
 import { formatEcDateTime } from '../utils/dateUtils';
+import { useAuthStore } from '../stores/useAuthStore';
 import {
   ArrowLeft,
   RefreshCw,
@@ -21,6 +22,9 @@ import {
   Filter,
   X,
   Inbox,
+  User,
+  Store,
+  LogOut,
 } from 'lucide-react';
 
 export type SaleHistoryFilterType = 'ALL' | 'REFERENCE' | 'CUSTOMER';
@@ -32,6 +36,13 @@ interface SalesHistoryPageProps {
 export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerminal }) => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const user = useAuthStore((state) => state.user);
+  const logout = useAuthStore((state) => state.logout);
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   const handleBack = () => {
     if (onBackToTerminal) {
@@ -45,10 +56,19 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
   const {
     sale: selectedSale,
     loading: detailLoading,
+    error: detailError,
     isOpen: isDetailOpen,
     openSaleDetail,
     closeSaleDetail,
   } = useSaleDetail();
+
+  // Aislamiento de Historial y Least Privilege
+  const isAdmin =
+    user?.role === 'Administrator' ||
+    user?.role?.toLowerCase() === 'administrator' ||
+    Boolean(user?.role?.includes('Administrator'));
+  const hasAssignedSession = Boolean(user?.posSessionId && user.posSessionId > 0);
+  const isRestricted = !isAdmin && !hasAssignedSession;
 
   // Lectura inicial de parámetros URL (filtros persistentes y compartibles)
   const querySearch = searchParams.get('buscar') || searchParams.get('q') || '';
@@ -188,14 +208,53 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
           <h1 className="text-sm font-bold text-slate-800">Historial de Ventas Sincronizadas</h1>
         </div>
 
-        <Button variant="outline" size="sm" onClick={() => refresh()} className="h-8 gap-1.5">
-          <RefreshCw className="h-3.5 w-3.5" />
-          Actualizar
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Badge Vendedor y Caja Asignada (Fase 4) */}
+          <div className="hidden md:flex items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+            <span className="text-slate-700 font-medium flex items-center gap-1">
+              <User className="h-3.5 w-3.5 text-slate-500" />
+              {user?.name || 'Vendedor'}
+            </span>
+            <span className="text-slate-300">|</span>
+            <span className={`font-semibold flex items-center gap-1 ${isAdmin ? 'text-purple-700' : 'text-emerald-700'}`}>
+              <Store className={`h-3.5 w-3.5 ${isAdmin ? 'text-purple-600' : 'text-emerald-600'}`} />
+              {isAdmin ? 'Todas las Cajas (Admin)' : (user?.posConfigName || 'Sin Caja Asignada')}
+            </span>
+          </div>
+
+          <Button variant="outline" size="sm" onClick={() => refresh()} className="h-8 gap-1.5">
+            <RefreshCw className="h-3.5 w-3.5" />
+            Actualizar
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleLogout}
+            title="Cerrar Sesión del Vendedor"
+            className="h-8 gap-1.5 text-xs border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Cerrar Sesión</span>
+          </Button>
+        </div>
       </header>
 
       {/* Contenido principal */}
       <main className="flex-1 p-6 max-w-6xl w-full mx-auto">
+        {/* Banner informativo de Acceso Restringido cuando no tiene caja asignada */}
+        {isRestricted && (
+          <div className="mb-4 p-4 rounded-xl border border-amber-300 bg-amber-50 text-amber-900 flex items-start gap-3 shadow-xs">
+            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="text-xs leading-relaxed">
+              <strong className="font-semibold block text-amber-800 mb-0.5">
+                ⚠️ Acceso Restringido: Su usuario no tiene una caja asignada.
+              </strong>
+              Para proteger la confidencialidad de la información (Data Protection), el historial de ventas solo está disponible para vendedores con caja activa o administradores.
+            </div>
+          </div>
+        )}
+
         <Card className="shadow-sm border-slate-200">
           <CardHeader className="pb-3 border-b flex flex-row items-center justify-between">
             <div>
@@ -204,7 +263,11 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
                 Órdenes Registradas (Persistencia Local de Auditoría)
               </CardTitle>
               <p className="text-xs text-slate-500 mt-1">
-                Garantiza trazabilidad local e idempotencia (RN-08) sin clonar catálogo de Odoo.
+                {isAdmin
+                  ? 'Vista de Administrador: Mostrando órdenes consolidadas de todas las cajas.'
+                  : hasAssignedSession
+                  ? `Mostrando órdenes exclusivas de su caja asignada: ${user?.posConfigName || `Caja #${user?.posSessionId}`} (Filtro de seguridad por caja activo).`
+                  : 'No tiene una caja asignada. Su usuario no tiene acceso al historial de órdenes de venta.'}
               </p>
             </div>
             <Badge variant="default">
@@ -217,66 +280,53 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
           {/* Barra de Búsqueda y Filtros de Órdenes */}
           <div className="p-4 bg-slate-50/70 border-b border-slate-200 space-y-2.5">
             <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
-              {/* Input de Búsqueda */}
-              <div className="relative flex-1 max-w-xl">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                <Input
-                  placeholder={getPlaceholder()}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9 pr-8 bg-white h-9 text-xs shadow-xs"
-                />
-                {searchTerm && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchTerm('')}
-                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
-                    title="Limpiar búsqueda"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
+              {/* Barra de Búsqueda con Combobox de Filtros (Punto 6) */}
+              <div className="flex items-center gap-2 flex-1 max-w-2xl">
+                {/* Combobox Select Estilizado (Punto 6) */}
+                <select
+                  value={filterType}
+                  onChange={(e) => setFilterType(e.target.value as SaleHistoryFilterType)}
+                  className="text-xs h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer shadow-xs shrink-0"
+                  aria-label="Criterio de filtro para el historial de órdenes"
+                >
+                  <option value="ALL">🔍 Todos los criterios</option>
+                  <option value="REFERENCE">🧾 Referencia / ID Odoo</option>
+                  <option value="CUSTOMER">👤 Cliente / Identificación</option>
+                </select>
+
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                  <Input
+                    placeholder={getPlaceholder()}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-9 pr-8 bg-white h-9 text-xs shadow-xs"
+                  />
+                  {searchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchTerm('')}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                      title="Limpiar búsqueda"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {/* Píldoras de Filtro: Todos | Referencia | Cliente */}
-              <div className="flex items-center gap-1.5 shrink-0 text-xs">
-                <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1 mr-1">
-                  <Filter className="h-3 w-3" />
-                  Filtro:
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setFilterType('ALL')}
-                  className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                    filterType === 'ALL'
-                      ? 'bg-emerald-600 text-white shadow-sm font-semibold'
-                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  Todos
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterType('REFERENCE')}
-                  className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                    filterType === 'REFERENCE'
-                      ? 'bg-emerald-600 text-white shadow-sm font-semibold'
-                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  Referencia
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFilterType('CUSTOMER')}
-                  className={`px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                    filterType === 'CUSTOMER'
-                      ? 'bg-emerald-600 text-white shadow-sm font-semibold'
-                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  Cliente
-                </button>
+              {/* Contador rápido / Estado a la derecha */}
+              <div className="text-xs text-slate-500 hidden sm:block shrink-0">
+                {searchTerm ? (
+                  <span>
+                    Coincidencias: <strong className="text-slate-800 font-mono font-semibold">{filteredSales.length}</strong> de{' '}
+                    <strong className="text-slate-800 font-mono font-semibold">{sales.length}</strong>
+                  </span>
+                ) : (
+                  <span>
+                    Total: <strong className="text-slate-800 font-mono font-semibold">{sales.length}</strong> órdenes
+                  </span>
+                )}
               </div>
             </div>
 
@@ -319,8 +369,21 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
             ) : sales.length === 0 ? (
               <div className="p-12 text-center text-slate-400">
                 <Inbox className="h-10 w-10 mx-auto mb-2 text-slate-300 stroke-1" />
-                <p className="font-medium text-slate-600">No se han registrado ventas en esta sesión.</p>
-                <p className="text-xs mt-1 text-slate-400">Regresa al terminal para procesar una nueva orden.</p>
+                {isRestricted ? (
+                  <>
+                    <p className="font-semibold text-amber-800 text-sm">
+                      ⚠️ Acceso Restringido: Su usuario no tiene una caja asignada.
+                    </p>
+                    <p className="text-xs mt-1 text-slate-500 max-w-md mx-auto">
+                      Su usuario no tiene acceso al historial de órdenes de venta. Para proteger la confidencialidad de la información (Data Protection), el historial solo está disponible para vendedores con caja activa o administradores.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-medium text-slate-600">No se han registrado ventas en esta sesión.</p>
+                    <p className="text-xs mt-1 text-slate-400">Regresa al terminal para procesar una nueva orden.</p>
+                  </>
+                )}
               </div>
             ) : filteredSales.length === 0 ? (
               <div className="p-12 text-center text-slate-400">
@@ -452,6 +515,7 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
         onClose={closeSaleDetail}
         sale={selectedSale}
         loading={detailLoading}
+        error={detailError}
       />
     </div>
   );

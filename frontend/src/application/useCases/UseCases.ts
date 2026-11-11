@@ -4,6 +4,8 @@ import { DiscountType } from '@/domain/CartItem';
 import { validateEcuadorianId } from '@/domain/ecuadorianIdValidator';
 import {
   IPosApiGateway,
+  LoginRequest,
+  LoginResponse,
   CreateSaleRequest,
   SaleOrderResult,
   PosApiError,
@@ -11,6 +13,24 @@ import {
   Customer,
 } from '../ports/IPosApiGateway';
 export { GetSaleDetailUseCase } from './GetSaleDetailUseCase';
+
+export class LoginUseCase {
+  private readonly _gateway: IPosApiGateway;
+
+  constructor(gateway: IPosApiGateway) {
+    this._gateway = gateway;
+  }
+
+  public async execute(request: LoginRequest): Promise<LoginResponse> {
+    if (!request.username || !request.username.trim() || !request.password) {
+      throw new Error('El usuario y la contraseña son campos obligatorios.');
+    }
+    if (!this._gateway.login) {
+      throw new Error('El método login no está implementado en el gateway provisto.');
+    }
+    return await this._gateway.login(request);
+  }
+}
 
 export class ManageCartUseCase {
   public addItem(cart: Cart, product: Product, quantity = 1): void {
