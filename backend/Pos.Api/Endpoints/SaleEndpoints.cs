@@ -52,18 +52,30 @@ public static class SaleEndpoints
                 );
             }
 
+            // [GUÍA ESTEBAN - MEJORA COLABORATIVA DE INTEGRIDAD Y AUDITORÍA]:
+            // Reforzamos la extracción de operador para que provenga con certeza de los claims
+            // firmados del token JWT para cajeros, garantizando trazabilidad fiel en la base de auditoría.
             var odooUserIdClaim = httpContext.User.FindFirst("odoo_user_id")?.Value;
             int? authenticatedUserId = int.TryParse(odooUserIdClaim, out var parsedUid) && parsedUid > 0 ? parsedUid : null;
 
             var operatorNameClaim = httpContext.User.FindFirst("FullName")?.Value
                 ?? httpContext.User.FindFirst(ClaimTypes.Name)?.Value
-                ?? httpContext.User.FindFirst("name")?.Value;
+                ?? httpContext.User.FindFirst("name")?.Value
+                ?? "Cajero POS";
+
+            var isAdmin = httpContext.User.IsInRole("Administrator") ||
+                          httpContext.User.Claims.Any(c =>
+                              (c.Type == ClaimTypes.Role || c.Type == "role" || c.Type == "http://schemas.microsoft.com/ws/2008/06/identity/claims/role")
+                              && string.Equals(c.Value, "Administrator", StringComparison.OrdinalIgnoreCase));
+
+            var effectiveUserId = isAdmin && command.UserId.HasValue ? command.UserId.Value : authenticatedUserId;
+            var effectiveOperatorName = isAdmin && !string.IsNullOrWhiteSpace(command.OperatorName) ? command.OperatorName : operatorNameClaim;
 
             var effectiveCommand = command with
             {
                 IdempotencyKey = idempotencyHeader,
-                UserId = command.UserId ?? authenticatedUserId,
-                OperatorName = !string.IsNullOrWhiteSpace(command.OperatorName) ? command.OperatorName : operatorNameClaim
+                UserId = effectiveUserId,
+                OperatorName = effectiveOperatorName
             };
             var result = await useCase.ExecuteAsync(effectiveCommand, ct);
             return Results.Created($"/api/sales/{result.OrderId}", result);
@@ -118,7 +130,14 @@ public static class SaleEndpoints
             var sale = await useCase.ExecuteAsync(id, ct);
             if (sale == null)
             {
-                return Results.NotFound(new { message = $"No se encontró la venta con identificador '{id}'." });
+                // [GUÍA ESTEBAN - MEJORA COLABORATIVA DE ESTANDARIZACIÓN RFC 7807]:
+                // Estandarizamos el retorno 404 a ProblemDetails para mantener la consistencia
+                // con todos los demás endpoints de la API y el estándar oficial RNF-08.
+                return Results.Problem(
+                    statusCode: StatusCodes.Status404NotFound,
+                    title: "Venta No Encontrada",
+                    detail: $"No se encontró ninguna venta registrada con el identificador '{id}'."
+                );
             }
 
             var isAdmin = httpContext.User.IsInRole("Administrator") ||
