@@ -973,4 +973,102 @@ public class PosTests
         // Assert: Consolidado Admin ve las 3 ventas
         allSales.Should().HaveCount(3);
     }
+
+    // =========================================================================
+    // [GUÍA ESTEBAN - TURNO 2 (SEMANA 4) - RNF-06 / CA-07 / AISLAMIENTO MULTI-CAJA]
+    // P25: Rechazo de venta cuando el operador intenta registrar en una caja ajena
+    // =========================================================================
+    [Fact]
+    public async Task P25_AislamientoCaja_CajeroNoPuedeRegistrarEnCajaAjena_LanzaApplicationValidationException()
+    {
+        // Arrange
+        var odooGateway = Substitute.For<IOdooPosGateway>();
+        var idempotencyStore = Substitute.For<IIdempotencyStore>();
+        var historyRepo = Substitute.For<ISaleHistoryRepository>();
+
+        // La caja autorizada y abierta en Odoo es la #5 (Furniture Shop)
+        odooGateway.GetActiveSessionAsync(5, Arg.Any<CancellationToken>())
+            .Returns(new PosSessionDto(5, "Furniture Shop", "opened", 2, IsOpen: true));
+
+        // Pero si el cajero consulta o intenta vender en la caja #9 (Clothes Shop no autorizada)
+        odooGateway.GetActiveSessionAsync(9, Arg.Any<CancellationToken>())
+            .Returns((PosSessionDto?)null);
+
+        var useCase = new CreateSaleUseCase(odooGateway, idempotencyStore, historyRepo);
+        var command = new CreateSaleCommand(
+            IdempotencyKey: "key-esteban-isolation-p25",
+            PosSessionId: 9, // Intento de emisión en caja ajena #9
+            CustomerDocument: "1710034065",
+            CustomerName: "Acme Corporation",
+            DiscountType: "NONE",
+            DiscountValue: 0m,
+            Items: new List<CreateSaleItemDto> { new(62, 1) }
+        );
+
+        // Act
+        var act = () => useCase.ExecuteAsync(command);
+
+        // Assert: El caso de uso rechaza la venta garantizando aislamiento estricto (RN-07)
+        await act.Should().ThrowAsync<ApplicationValidationException>()
+            .WithMessage("*sesión de POS no se encuentra abierta o no coincide*");
+    }
+
+    // =========================================================================
+    // [GUÍA ESTEBAN - TURNO 2 (SEMANA 4) - RNF-06 / CA-07 / ROLES Y PRIVILEGIOS]
+    // P26: Rechazo de venta cuando el operador no tiene ninguna sesión de POS activa
+    // =========================================================================
+    [Fact]
+    public async Task P26_AislamientoCaja_OperadorSinCajaAsignada_LanzaApplicationValidationException()
+    {
+        // Arrange
+        var odooGateway = Substitute.For<IOdooPosGateway>();
+        var idempotencyStore = Substitute.For<IIdempotencyStore>();
+        var historyRepo = Substitute.For<ISaleHistoryRepository>();
+
+        // Sin sesión activa en Odoo
+        odooGateway.GetActiveSessionAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns((PosSessionDto?)null);
+        odooGateway.GetActiveSessionAsync(Arg.Any<CancellationToken>())
+            .Returns((PosSessionDto?)null);
+
+        var useCase = new CreateSaleUseCase(odooGateway, idempotencyStore, historyRepo);
+        var command = new CreateSaleCommand(
+            IdempotencyKey: "key-esteban-no-session-p26",
+            PosSessionId: 0,
+            CustomerDocument: "1710034065",
+            CustomerName: "Acme Corporation",
+            DiscountType: "NONE",
+            DiscountValue: 0m,
+            Items: new List<CreateSaleItemDto> { new(62, 1) }
+        );
+
+        // Act
+        var act = () => useCase.ExecuteAsync(command);
+
+        // Assert: No se permite operar a usuarios sin sesión activa (Principio de Menor Privilegio)
+        await act.Should().ThrowAsync<ApplicationValidationException>()
+            .WithMessage("*sesión de POS*");
+    }
+
+    // =========================================================================
+    // [GUÍA ESTEBAN - TURNO 2 (SEMANA 4) - RNF-06 / CA-07 / CONSULTA SEGURA]
+    // P27: Historial de ventas devuelve lista vacía si la sesión solicitada no tiene registros
+    // =========================================================================
+    [Fact]
+    public async Task P27_AislamientoHistorial_CajaSinVentas_DevuelveListaVaciaSinErrores()
+    {
+        // Arrange
+        var historyRepo = Substitute.For<ISaleHistoryRepository>();
+        historyRepo.GetSalesAsync(999, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<SaleOrderResponseDto>>(Array.Empty<SaleOrderResponseDto>()));
+
+        var useCase = new GetSalesHistoryUseCase(historyRepo);
+
+        // Act
+        var result = await useCase.ExecuteAsync(999);
+
+        // Assert: Garantiza consistencia sin nulos ni excepciones no controladas
+        result.Should().NotBeNull();
+        result.Should().BeEmpty();
+    }
 }
