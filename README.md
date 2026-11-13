@@ -48,7 +48,7 @@ En estricto cumplimiento de la especificación académica oficial (*Documento de
 * 👤 **Eli (Turno 1):** [Informe de Resiliencia, Timeouts e Idempotencia Estricta (P03, P05, P06, P08)](docs/evidencias/semana3-eli-resiliencia-idempotencia.md)
 * 👤 **Vero (Turno 2):** [Informe de Trazabilidad en Odoo, Inmutabilidad e Historial (RF-12, RF-13, RF-14, RN-06)](docs/evidencias/semana3-vero-historial-trazabilidad.md)
 * 👤 **Esteban (Turno 3):** [Informe de Extensibilidad de Pagos, SOLID (OCP) y Selector UI (RF-10, P10)](docs/evidencias/semana3-esteban-extensibilidad-pagos.md)
-* 👤 **Bryan Quitto (Turno 4):** [Informe de Auditoría Lead QA, Integración E2E Odoo Anexo F y Cierre Semana 3](docs/evidencias/semana3-bryan-auditoria-p09.md)
+* 👤 **Bryan López (Turno 4):** [Informe de Auditoría Lead QA, Integración E2E Odoo Anexo F y Cierre Semana 3](docs/evidencias/semana3-bryan-auditoria-p09.md)
 * 🔬 **Auditoría Semanas 1 y 2:** [Trazas JSON-2 de Integración Real contra Odoo 20 Community](docs/evidencias/semana1-2-integracion-real.md)
 
 ### C. Fichas Técnicas de Patrones de Diseño (Secciones 7 y 17 de la Rúbrica)
