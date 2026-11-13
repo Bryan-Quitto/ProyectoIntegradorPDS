@@ -746,4 +746,126 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
       userAdmin.role !== 'Administrator' && (!userAdmin.posSessionId || userAdmin.posSessionId <= 0);
     expect(isRestrictedAdmin).toBe(false);
   });
+
+  // =========================================================================
+  // [GUÍA ESTEBAN - TURNO 2 (SEMANA 4) - RNF-08 / CA-01 / RESILIENCIA FRONTEND]
+  // P32: formatUserErrorMessage traduce fallos técnicos de red a mensajes amigables
+  // =========================================================================
+  it('P32: formatUserErrorMessage traduce fallos técnicos de red a mensajes comprensibles sin tecnicismos en inglés', () => {
+    // Caso 1: TypeError ('Failed to fetch' - navegador sin internet o backend caído)
+    const typeErrorFetch = new TypeError('Failed to fetch');
+    const msg1 = formatUserErrorMessage(typeErrorFetch);
+    expect(msg1).toBe(USER_FRIENDLY_NETWORK_ERROR);
+
+    // Caso 2: Error genérico de conexión rechazada
+    const connRefused = new Error('NetworkError: connection refused at http://localhost:5000');
+    const msg2 = formatUserErrorMessage(connRefused);
+    expect(msg2).toBe(USER_FRIENDLY_NETWORK_ERROR);
+
+    // Caso 3: PosApiError con HTTP 401
+    const authError401 = new PosApiError(401, 'Unauthorized', 'Invalid credentials');
+    const msg3 = formatUserErrorMessage(authError401);
+    expect(msg3).toContain('Usuario/correo o contraseña incorrectos');
+  });
+
+  // =========================================================================
+  // [GUÍA ESTEBAN - TURNO 2 (SEMANA 4) - RF-14 / INTEGRACIÓN CLIENTES ODOO]
+  // P33: CheckoutSaleUseCase asocia cliente Acme Corporation y PartnerId en la orden
+  // =========================================================================
+  it('P33: CheckoutSaleUseCase asocia correctamente el cliente Acme Corporation con cédula ecuatoriana y PartnerId', async () => {
+    const cart = new Cart();
+    const prod: Product = { id: 62, name: 'Whiteboard Pen', price: 1.20, barcode: 'CONS_0001', availableQuantity: 75 };
+    cart.addItem(prod, 2);
+
+    const mockGateway: IPosApiGateway = {
+      getProducts: vi.fn(),
+      getSalesHistory: vi.fn(),
+      getActiveSession: vi.fn(),
+      getSaleById: vi.fn(),
+      getCustomers: vi.fn(),
+      login: vi.fn(),
+      createSale: vi.fn().mockResolvedValue({
+        orderId: '5b884ace-67ba-46ab-226a-fe41593bd0ee',
+        posSessionId: 5,
+        customerDocument: '1710034065',
+        customerName: 'Acme Corporation',
+        subTotal: 2.40,
+        discountAmount: 0,
+        taxAmount: 0.50,
+        totalAmount: 2.90,
+        state: 'Synced',
+        odooOrderReference: '260-1-000008',
+        odooOrderId: 8,
+        createdAtUtc: new Date().toISOString(),
+        lines: [],
+        discountPolicyName: 'Sin Descuento',
+        paymentMethod: 'Efectivo',
+        amountPaid: 2.90,
+        sessionName: 'Furniture Shop/00001',
+        operatorName: 'Mitchell Admin',
+        partnerId: 10,
+      }),
+    };
+
+    const useCase = new CheckoutSaleUseCase(mockGateway);
+    const result = await useCase.execute({
+      cart,
+      posSessionId: 5,
+      customerDocument: '1710034065',
+      customerName: 'Acme Corporation',
+      paymentMethod: 'Efectivo',
+      partnerId: 10,
+      idempotencyKey: 'key-esteban-p33',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.order).toBeDefined();
+    expect(result.order?.customerName).toBe('Acme Corporation');
+    expect(result.order?.customerDocument).toBe('1710034065');
+    expect(result.order?.partnerId).toBe(10);
+    expect(mockGateway.createSale).toHaveBeenCalledWith(
+      expect.objectContaining({
+        posSessionId: 5,
+        customerDocument: '1710034065',
+        customerName: 'Acme Corporation',
+        partnerId: 10,
+        paymentMethod: 'Efectivo',
+        idempotencyKey: 'key-esteban-p33',
+      })
+    );
+  });
+
+  // =========================================================================
+  // [GUÍA ESTEBAN - TURNO 2 (SEMANA 4) - RN-07 / MANEJO DE ERRORES ROBUSTO]
+  // P34: CheckoutSaleUseCase propaga el error de negocio ante rechazo de la API
+  // =========================================================================
+  it('P34: CheckoutSaleUseCase captura PosApiError y devuelve success:false con mensaje descriptivo sin falsos éxitos', async () => {
+    const cart = new Cart();
+    const prod: Product = { id: 62, name: 'Whiteboard Pen', price: 1.20, barcode: 'CONS_0001', availableQuantity: 75 };
+    cart.addItem(prod, 1);
+
+    const mockGateway: IPosApiGateway = {
+      getProducts: vi.fn(),
+      getSalesHistory: vi.fn(),
+      getActiveSession: vi.fn(),
+      getSaleById: vi.fn(),
+      getCustomers: vi.fn(),
+      login: vi.fn(),
+      createSale: vi.fn().mockRejectedValue(
+        new PosApiError(403, 'Caja No Autorizada', 'El operador no tiene autorización para emitir ventas en la caja #9.')
+      ),
+    };
+
+    const useCase = new CheckoutSaleUseCase(mockGateway);
+    const result = await useCase.execute({
+      cart,
+      posSessionId: 9,
+      customerDocument: '1710034065',
+      customerName: 'Acme Corporation',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.errorMessage).toBeDefined();
+    expect(result.errorMessage).toContain('Caja No Autorizada');
+  });
 });
