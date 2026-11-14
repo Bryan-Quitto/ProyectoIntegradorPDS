@@ -53,6 +53,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const [paymentMethod, setPaymentMethod] = useState<'Efectivo' | 'Transferencia' | 'Tarjeta'>('Efectivo');
 
   useEffect(() => {
+    if (isOpen && !lastResult) {
+      setPaymentMethod('Efectivo');
+    }
+  }, [isOpen, lastResult]);
+
+  useEffect(() => {
     if (selectedCustomer) {
       setCustomerDoc(selectedCustomer.vat || '9999999999999');
       setCustomerName(selectedCustomer.name);
@@ -242,7 +248,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             <Button
               type="button"
               className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-10 text-xs shadow-sm"
-              onClick={onSuccessDone}
+              onClick={() => {
+                setPaymentMethod('Efectivo');
+                onSuccessDone();
+              }}
             >
               <span>Finalizar y Nueva Venta</span>
             </Button>

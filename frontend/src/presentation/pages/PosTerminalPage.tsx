@@ -398,6 +398,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
   // Solo al hacer clic explícito en 'Finalizar y Nueva Venta' se vacía el carrito y se restablece el cliente para el siguiente turno.
   const handleSuccessDone = () => {
     clearCart();
+    applyDiscount('NONE', 0);
     setSelectedCustomer(null);
     resetCheckoutSession();
     setPaymentModalOpen(false);
@@ -406,6 +407,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
 
   const handleConfirmReset = () => {
     clearCart();
+    applyDiscount('NONE', 0);
     setSelectedCustomer(null);
     setShowResetConfirm(false);
   };

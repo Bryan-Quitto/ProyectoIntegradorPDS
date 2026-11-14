@@ -68,6 +68,7 @@ export class Cart {
 
   public clear(): void {
     this._items.clear();
+    this._discountPolicy = { type: 'NONE', value: 0 };
   }
 
   public setDiscount(policy: DiscountPolicyConfig): void {

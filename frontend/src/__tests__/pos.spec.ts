@@ -63,6 +63,14 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
     expect(cart.netSubtotal).toBe(12.60);
     expect(cart.taxAmount).toBe(1.89);
     expect(cart.total).toBe(14.49);
+
+    // Act: Limpiar el carrito para nueva venta (RN-01 / Limpieza completa de ítems y política de descuento)
+    useCase.clearCart(cart);
+    expect(cart.items).toHaveLength(0);
+    expect(cart.discountPolicy.type).toBe('NONE');
+    expect(cart.discountPolicy.value).toBe(0);
+    expect(cart.discountAmount).toBe(0);
+    expect(cart.total).toBe(0);
   });
 
   // =========================================================================
