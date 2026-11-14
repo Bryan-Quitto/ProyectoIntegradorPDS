@@ -64,7 +64,7 @@ public class BankTransferPaymentProcessor : IPaymentProcessor
     {
         if (string.IsNullOrWhiteSpace(paymentMethod)) return false;
         var m = paymentMethod.Trim().ToUpperInvariant();
-        return m is "TRANSFERENCIA" or "TRANSFER" or "BANK" or "TARJETA" or "CARD";
+        return m is "TRANSFERENCIA" or "TRANSFER" or "BANK";
     }
 
     public async Task<PaymentProcessingResult> ProcessPaymentAsync(
@@ -72,11 +72,15 @@ public class BankTransferPaymentProcessor : IPaymentProcessor
         int posSessionId,
         CancellationToken cancellationToken = default)
     {
-        // En Odoo POS el tipo de método para transferencias o bancos es 'bank'
-        var methodId = await _odooGateway.ResolvePaymentMethodIdAsync(posSessionId, "bank", cancellationToken);
+        // En Odoo POS el tipo de método para transferencias o bancos es 'transfer'/'bank'
+        var methodId = await _odooGateway.ResolvePaymentMethodIdAsync(posSessionId, "transfer", cancellationToken);
         if (methodId <= 0)
         {
             // Si el POS no tiene configurado diario bancario, fallback controlado al método disponible
+            methodId = await _odooGateway.ResolvePaymentMethodIdAsync(posSessionId, "bank", cancellationToken);
+        }
+        if (methodId <= 0)
+        {
             methodId = await _odooGateway.ResolvePaymentMethodIdAsync(posSessionId, "cash", cancellationToken);
         }
 
@@ -86,6 +90,54 @@ public class BankTransferPaymentProcessor : IPaymentProcessor
             AmountPaid: saleOrder.TotalAmount,
             ResolvedOdooMethodId: methodId,
             TransactionReference: $"TRF-{DateTime.UtcNow.Ticks}"
+        );
+    }
+}
+
+/// <summary>
+/// [RF-10 / PATRÓN STRATEGY / OCP]:
+/// Estrategia concreta de cobro vía Tarjeta (Card / Datáfono).
+/// Resuelve el ID de pago tipo 'card'/'tarjeta' en Odoo y asienta el cobro.
+/// </summary>
+public class CardPaymentProcessor : IPaymentProcessor
+{
+    private readonly IOdooPosGateway _odooGateway;
+
+    public string MethodName => "Tarjeta";
+
+    public CardPaymentProcessor(IOdooPosGateway odooGateway)
+    {
+        _odooGateway = odooGateway;
+    }
+
+    public bool CanHandle(string paymentMethod)
+    {
+        if (string.IsNullOrWhiteSpace(paymentMethod)) return false;
+        var m = paymentMethod.Trim().ToUpperInvariant();
+        return m is "TARJETA" or "CARD";
+    }
+
+    public async Task<PaymentProcessingResult> ProcessPaymentAsync(
+        SaleOrder saleOrder,
+        int posSessionId,
+        CancellationToken cancellationToken = default)
+    {
+        var methodId = await _odooGateway.ResolvePaymentMethodIdAsync(posSessionId, "card", cancellationToken);
+        if (methodId <= 0)
+        {
+            methodId = await _odooGateway.ResolvePaymentMethodIdAsync(posSessionId, "bank", cancellationToken);
+        }
+        if (methodId <= 0)
+        {
+            methodId = await _odooGateway.ResolvePaymentMethodIdAsync(posSessionId, "cash", cancellationToken);
+        }
+
+        return new PaymentProcessingResult(
+            Success: true,
+            MethodName: "Tarjeta",
+            AmountPaid: saleOrder.TotalAmount,
+            ResolvedOdooMethodId: methodId,
+            TransactionReference: $"CARD-{DateTime.UtcNow.Ticks}"
         );
     }
 }

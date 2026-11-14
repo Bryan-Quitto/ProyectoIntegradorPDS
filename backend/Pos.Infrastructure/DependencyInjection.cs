@@ -78,6 +78,7 @@ public static class DependencyInjection
         // Registro de los procesadores de pago extensibles.
         services.AddScoped<IPaymentProcessor, CashPaymentProcessor>();
         services.AddScoped<IPaymentProcessor, BankTransferPaymentProcessor>();
+        services.AddScoped<IPaymentProcessor, CardPaymentProcessor>();
 
         // 5. Application Use Cases
         services.AddScoped<LoginOperatorUseCase>();

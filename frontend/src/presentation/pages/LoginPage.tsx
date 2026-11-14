@@ -133,7 +133,7 @@ export const LoginPage: React.FC = () => {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Usuario o Correo Electrónico
+                  Correo Electrónico
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
@@ -147,7 +147,7 @@ export const LoginPage: React.FC = () => {
                     value={username}
                     onKeyDown={handleUsernameKeyDown}
                     onChange={handleUsernameChange}
-                    placeholder="ej. bryanleninqn@gmail.com o cajero1"
+                    placeholder="ej. cajero1@gmail.com"
                     className="pl-9"
                     disabled={loading}
                   />

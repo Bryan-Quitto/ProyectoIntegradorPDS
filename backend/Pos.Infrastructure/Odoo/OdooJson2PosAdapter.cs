@@ -473,10 +473,88 @@ public class OdooJson2PosAdapter : IOdooPosGateway
     /// </summary>
     public async Task<int> ResolvePaymentMethodIdAsync(int sessionId, string paymentMethodType, CancellationToken ct = default)
     {
-        if (string.Equals(paymentMethodType, "bank", StringComparison.OrdinalIgnoreCase))
+        var requested = (paymentMethodType ?? string.Empty).Trim().ToLowerInvariant();
+
+        if (requested is "transfer" or "transferencia")
+        {
+            return await ResolveSpecificPaymentMethodIdAsync(sessionId, "transfer", ct);
+        }
+        if (requested is "card" or "tarjeta")
+        {
+            return await ResolveSpecificPaymentMethodIdAsync(sessionId, "card", ct);
+        }
+        if (requested is "bank")
         {
             return await ResolveBankPaymentMethodIdAsync(sessionId, ct);
         }
+        return await ResolveCashPaymentMethodIdAsync(sessionId, ct);
+    }
+
+    private async Task<int> ResolveSpecificPaymentMethodIdAsync(int sessionId, string targetCategory, CancellationToken ct)
+    {
+        var session = await CallAsync("pos.session", "search_read", new
+        {
+            domain = new object[] { new object[] { "id", "=", sessionId } },
+            fields = new[] { "id", "config_id" },
+            limit = 1
+        }, ct);
+
+        var first = session?.AsArray().FirstOrDefault();
+        var configNode = first?["config_id"];
+        var configId = ReadIdList(configNode).FirstOrDefault();
+        if (configId <= 0 && configNode is JsonValue val && val.TryGetValue<int>(out var singleId))
+        {
+            configId = singleId;
+        }
+
+        var methods = await CallAsync("pos.payment.method", "search_read", new
+        {
+            domain = new object[]
+            {
+                new object[] { "config_ids", "in", new[] { configId } }
+            },
+            fields = new[] { "id", "name", "type" },
+            limit = 20
+        }, ct);
+
+        var methodList = methods?.AsArray();
+        if (methodList != null && methodList.Count > 0)
+        {
+            if (targetCategory == "transfer")
+            {
+                var transferMethod = methodList.FirstOrDefault(m =>
+                {
+                    var name = m?["name"]?.ToString() ?? string.Empty;
+                    return name.Contains("transfer", StringComparison.OrdinalIgnoreCase) ||
+                           name.Contains("banco", StringComparison.OrdinalIgnoreCase);
+                });
+                if (transferMethod != null)
+                {
+                    return transferMethod["id"]!.GetValue<int>();
+                }
+            }
+            else if (targetCategory == "card")
+            {
+                var cardMethod = methodList.FirstOrDefault(m =>
+                {
+                    var name = m?["name"]?.ToString() ?? string.Empty;
+                    return name.Contains("tarjeta", StringComparison.OrdinalIgnoreCase) ||
+                           name.Contains("card", StringComparison.OrdinalIgnoreCase);
+                });
+                if (cardMethod != null)
+                {
+                    return cardMethod["id"]!.GetValue<int>();
+                }
+            }
+
+            var anyBank = methodList.FirstOrDefault(m =>
+                string.Equals(m?["type"]?.ToString(), "bank", StringComparison.OrdinalIgnoreCase));
+            if (anyBank != null)
+            {
+                return anyBank["id"]!.GetValue<int>();
+            }
+        }
+
         return await ResolveCashPaymentMethodIdAsync(sessionId, ct);
     }
 
