@@ -876,4 +876,25 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
     expect(result.errorMessage).toBeDefined();
     expect(result.errorMessage).toContain('Caja No Autorizada');
   });
+
+  it('P35: Reemplazar un producto del carrito restablece la cantidad del nuevo ítem a 1 unidad', () => {
+    const cart = new Cart();
+    const useCase = new ManageCartUseCase();
+    const prodA: Product = { id: 1, name: 'Producto Anterior', price: 10.0, barcode: 'PROD-A', availableQuantity: 20 };
+    const prodB: Product = { id: 2, name: 'Producto Nuevo', price: 15.0, barcode: 'PROD-B', availableQuantity: 20 };
+
+    // Agregar Producto A con 7 unidades
+    useCase.addItem(cart, prodA, 7);
+    expect(cart.items).toHaveLength(1);
+    expect(cart.items[0].quantity).toBe(7);
+
+    // Reemplazo: se retira el producto anterior y se coloca el nuevo producto con cantidad 1
+    useCase.removeItem(cart, prodA.id);
+    useCase.addItem(cart, prodB, 1);
+
+    expect(cart.items).toHaveLength(1);
+    expect(cart.items[0].productId).toBe(prodB.id);
+    expect(cart.items[0].quantity).toBe(1);
+    expect(cart.subtotal).toBe(15.0);
+  });
 });

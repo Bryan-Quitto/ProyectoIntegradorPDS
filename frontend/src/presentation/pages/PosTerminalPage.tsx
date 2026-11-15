@@ -5,6 +5,7 @@ import { useProducts } from '../hooks/useProducts';
 import { useCheckout } from '../hooks/useCheckout';
 import { Customer } from '@/application/ports/IPosApiGateway';
 import { Product } from '@/domain/Product';
+import { Cart } from '@/domain/Cart';
 import { CartItem } from '@/domain/CartItem';
 import { validateEcuadorianId } from '@/domain/ecuadorianIdValidator';
 import { useAuthStore } from '../stores/useAuthStore';
@@ -333,11 +334,10 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
       const alreadyInCart = items.find((i) => i.productId === newId);
       if (alreadyInCart) {
         removeItem(oldId);
-        updateQuantity(newId, alreadyInCart.quantity + replacingItem.quantity);
+        updateQuantity(newId, Math.min(Cart.MAX_QUANTITY, alreadyInCart.quantity + 1));
       } else {
-        const prevQty = replacingItem.quantity;
         removeItem(oldId);
-        addItem(product, prevQty);
+        addItem(product, 1);
       }
 
       setReplacingItem(null);
