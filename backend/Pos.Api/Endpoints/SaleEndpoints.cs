@@ -75,7 +75,8 @@ public static class SaleEndpoints
             {
                 IdempotencyKey = idempotencyHeader,
                 UserId = effectiveUserId,
-                OperatorName = effectiveOperatorName
+                OperatorName = effectiveOperatorName,
+                IsAdmin = isAdmin
             };
             var result = await useCase.ExecuteAsync(effectiveCommand, ct);
             return Results.Created($"/api/sales/{result.OrderId}", result);

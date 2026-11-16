@@ -16,6 +16,7 @@ import {
   Receipt,
   Lock,
   Printer,
+  LogOut,
 } from 'lucide-react';
 
 interface PaymentModalProps {
@@ -33,6 +34,7 @@ interface PaymentModalProps {
   onSuccessDone: () => void;
   selectedCustomer?: Customer | null;
   onOpenCustomerSelector?: () => void;
+  onLogout?: () => void;
 }
 
 export const PaymentModal: React.FC<PaymentModalProps> = ({
@@ -44,6 +46,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   lastResult,
   onSuccessDone,
   selectedCustomer,
+  onLogout,
 }) => {
   const [customerDoc, setCustomerDoc] = useState('9999999999999');
   const [customerName, setCustomerName] = useState('Consumidor Final');
@@ -260,12 +263,33 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           {lastResult && !lastResult.success && (
-            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-start gap-2 text-rose-700 text-xs">
-              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-bold">Error de Sincronización (RN-07):</p>
-                <p>{lastResult.errorMessage}</p>
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg flex flex-col gap-2 text-rose-700 text-xs">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-rose-600" />
+                <div>
+                  <p className="font-bold">Error de Sincronización (RN-07):</p>
+                  <p>{lastResult.errorMessage}</p>
+                </div>
               </div>
+              {(lastResult.errorMessage?.toLowerCase().includes('no está asignada') ||
+                lastResult.errorMessage?.toLowerCase().includes('no tiene una caja') ||
+                lastResult.errorMessage?.toLowerCase().includes('sin caja asignada') ||
+                lastResult.errorMessage?.toLowerCase().includes('no existe sesión') ||
+                lastResult.errorMessage?.toLowerCase().includes('caja no autorizada') ||
+                lastResult.errorMessage?.toLowerCase().includes('no tiene autorización') ||
+                lastResult.errorMessage?.toLowerCase().includes('cierre sesión') ||
+                lastResult.errorMessage?.toLowerCase().includes('cerrar sesión') ||
+                lastResult.errorMessage?.toLowerCase().includes('actualizar su asignación')) && onLogout && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={onLogout}
+                  className="mt-1 w-full flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold h-9 text-xs shadow-sm"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  <span>Cerrar Sesión para Sincronizar Caja</span>
+                </Button>
+              )}
             </div>
           )}
 

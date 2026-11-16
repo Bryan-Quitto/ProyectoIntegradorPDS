@@ -51,7 +51,8 @@ public record CreateSaleCommand(
     string PaymentMethod = "Efectivo",
     int? PartnerId = null,
     int? UserId = null,
-    string? OperatorName = null
+    string? OperatorName = null,
+    bool IsAdmin = false
 );
 
 public record SaleOrderLineDto(

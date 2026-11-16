@@ -252,10 +252,12 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
   // Estado para la validación Pre-Flight en caliente al presionar 'Finalizar Venta / Cobrar POS'
   const [isValidatingPreflight, setIsValidatingPreflight] = useState(false);
   const [preflightErrorAlert, setPreflightErrorAlert] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
-  // Limpiar alerta de pre-flight si el usuario modifica los ítems o el cliente
+  // Limpiar alertas si el usuario modifica los ítems o el cliente
   useEffect(() => {
     setPreflightErrorAlert(null);
+    setSyncError(null);
   }, [items, selectedCustomer]);
 
   // Cache de productos seleccionados en el carrito para soporte de catálogo masivo (1M+)
@@ -376,9 +378,11 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
       : activeSession?.id;
 
     if (!effectiveSessionId) {
+      const noSessionErr = 'No existe sesión de POS asignada o activa en Odoo.';
+      setSyncError(noSessionErr);
       return {
         success: false,
-        errorMessage: 'No existe sesión de POS asignada o activa en Odoo.',
+        errorMessage: noSessionErr,
       };
     }
 
@@ -392,13 +396,17 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
       effectivePartnerId
     );
 
-    // [SINCRONIZACIÓN INMEDIATA DE STOCK]: Al confirmarse la venta en Odoo, recargamos el catálogo
-    if (result.success) {
+    if (!result.success && result.errorMessage) {
+      setSyncError(result.errorMessage);
+    } else if (result.success) {
+      setSyncError(null);
       void refresh();
     }
 
     return result;
   };
+
+  const handlePaymentSubmit = handleConfirmPayment;
 
   // Recargar catálogo de stock siempre que se abra el modal de búsqueda de productos
   useEffect(() => {
@@ -437,6 +445,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
 
     setIsValidatingPreflight(true);
     setPreflightErrorAlert(null);
+    setSyncError(null);
 
     try {
       // 1. Consulta en caliente a Odoo ERP para sincronizar inventario y sesión en tiempo real
@@ -1158,6 +1167,38 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
                   </div>
                 </div>
 
+                {/* Banner de Error de Sincronización de Venta (Zero-Trust Session Check) */}
+                {syncError && (
+                  <div className="p-3.5 rounded-lg bg-rose-50 border border-rose-300 text-rose-800 text-xs space-y-2 animate-in fade-in">
+                    <div className="font-bold flex items-center gap-1.5 text-rose-900">
+                      <AlertCircle className="h-4 w-4 shrink-0 text-rose-600" />
+                      <span>Error de Sincronización (RN-07):</span>
+                    </div>
+                    <div className="p-2 rounded bg-rose-100/90 border border-rose-300/80 text-rose-950 font-semibold text-[11px] leading-snug">
+                      {syncError}
+                    </div>
+                    {(syncError.toLowerCase().includes('no está asignada') ||
+                      syncError.toLowerCase().includes('no tiene una caja') ||
+                      syncError.toLowerCase().includes('sin caja asignada') ||
+                      syncError.toLowerCase().includes('no existe sesión') ||
+                      syncError.toLowerCase().includes('caja no autorizada') ||
+                      syncError.toLowerCase().includes('no tiene autorización') ||
+                      syncError.toLowerCase().includes('cerrar sesión') ||
+                      syncError.toLowerCase().includes('cierre sesión') ||
+                      syncError.toLowerCase().includes('actualizar su asignación')) && (
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        onClick={handleLogout}
+                        className="w-full flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold h-9 text-xs shadow-sm"
+                      >
+                        <LogOut className="h-3.5 w-3.5" />
+                        <span>Cerrar Sesión para Sincronizar Caja</span>
+                      </Button>
+                    )}
+                  </div>
+                )}
+
                 {/* Banner de Errores Pre-flight (Shift-Left Validation) */}
                 {(stockValidationErrors.length > 0 || customerValidationError || preflightErrorAlert) && (
                   <div className="p-3.5 rounded-lg bg-rose-50 border border-rose-300 text-rose-800 text-xs space-y-2 animate-in fade-in">
@@ -1362,12 +1403,13 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
         isOpen={paymentModalOpen}
         onClose={handleClosePaymentModal}
         total={total}
-        onConfirmPayment={handleConfirmPayment}
+        onConfirmPayment={handlePaymentSubmit}
         processing={processing}
         lastResult={lastResult}
         onSuccessDone={handleSuccessDone}
         selectedCustomer={selectedCustomer}
         onOpenCustomerSelector={() => setCustomerModalOpen(true)}
+        onLogout={handleLogout}
       />
     </div>
   );

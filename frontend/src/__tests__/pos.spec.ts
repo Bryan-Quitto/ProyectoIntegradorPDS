@@ -1149,4 +1149,31 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
     // Búsqueda sin coincidencias
     expect(filterBySession('Inexistente')).toHaveLength(0);
   });
+
+  // =========================================================================
+  // P44: Detección de error de titularidad de caja en caliente (Zero-Trust Session Check)
+  // =========================================================================
+  it('P44: Detecta mensaje de error de caja reasignada o no autorizada para sugerir cierre de sesión', () => {
+    const errorMsgReassigned = "La caja/sesión #1 ya no está asignada al cajero 'Juan Perez'. El responsable actual asignado en Odoo ERP es 'Maria Lopez'. Por favor cierre sesión y vuelva a ingresar para actualizar su asignación de caja.";
+    const errorMsgForbidden = "El operador autenticado no tiene una caja o sesión de POS activa asignada en Odoo ERP. No está autorizado para registrar ventas.";
+
+    const isSessionReassignedOrUnauthorized = (msg: string) => {
+      const lower = msg.toLowerCase();
+      return (
+        lower.includes('no está asignada') ||
+        lower.includes('no tiene una caja') ||
+        lower.includes('sin caja asignada') ||
+        lower.includes('no existe sesión') ||
+        lower.includes('caja no autorizada') ||
+        lower.includes('no tiene autorización') ||
+        lower.includes('cerrar sesión') ||
+        lower.includes('cierre sesión') ||
+        lower.includes('actualizar su asignación')
+      );
+    };
+
+    expect(isSessionReassignedOrUnauthorized(errorMsgReassigned)).toBe(true);
+    expect(isSessionReassignedOrUnauthorized(errorMsgForbidden)).toBe(true);
+    expect(isSessionReassignedOrUnauthorized('Error de red al consultar productos')).toBe(false);
+  });
 });

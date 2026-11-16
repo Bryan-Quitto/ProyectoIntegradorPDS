@@ -138,12 +138,20 @@ public class CreateSaleUseCase
         }
 
         // 2. Validación de Sesión Activa de POS
-        var activeSession = await _odooGateway.GetActiveSessionAsync(command.PosSessionId, cancellationToken)
-            ?? await _odooGateway.GetActiveSessionAsync(cancellationToken);
+        var activeSession = await _odooGateway.GetActiveSessionAsync(command.PosSessionId, cancellationToken);
         if (activeSession == null || !activeSession.IsOpen || activeSession.Id != command.PosSessionId)
         {
             throw new ApplicationValidationException(nameof(command.PosSessionId),
-                "La sesión de POS no se encuentra abierta o no coincide con la sesión activa de Odoo.");
+                $"La caja/sesión #{command.PosSessionId} se encuentra cerrada o inactiva en Odoo ERP.");
+        }
+
+        // Validación de Titularidad de Caja en Caliente (Zero-Trust)
+        if (!command.IsAdmin && command.UserId.HasValue && activeSession.UserId > 0 && activeSession.UserId != command.UserId.Value)
+        {
+            throw new ApplicationValidationException(nameof(command.PosSessionId),
+                $"La caja/sesión #{command.PosSessionId} ya no está asignada al cajero '{command.OperatorName}'. " +
+                $"El responsable actual asignado en Odoo ERP es '{activeSession.UserName}'. " +
+                "Por favor cierre sesión y vuelva a ingresar para actualizar su asignación de caja.");
         }
 
         // 3. RN-01 Rechazar venta sin productos

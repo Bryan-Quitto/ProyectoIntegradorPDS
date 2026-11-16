@@ -64,6 +64,8 @@ public class PosTests
         // Sesión cerrada
         odooGateway.GetActiveSessionAsync(Arg.Any<CancellationToken>())
             .Returns(new PosSessionDto(1, "Main POS", "closed", 2, IsOpen: false));
+        odooGateway.GetActiveSessionAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new PosSessionDto(1, "Main POS", "closed", 2, IsOpen: false));
 
         var useCase = new CreateSaleUseCase(odooGateway, idempotencyStore, historyRepo);
         var command = new CreateSaleCommand(
@@ -81,7 +83,7 @@ public class PosTests
 
         // Assert
         await act.Should().ThrowAsync<ApplicationValidationException>()
-            .WithMessage("*sesión de POS*");
+            .WithMessage("*cerrada o inactiva*");
     }
 
     // =========================================================================
@@ -96,6 +98,8 @@ public class PosTests
         var historyRepo = Substitute.For<ISaleHistoryRepository>();
 
         odooGateway.GetActiveSessionAsync(Arg.Any<CancellationToken>())
+            .Returns(new PosSessionDto(1, "Main POS", "opened", 2, IsOpen: true));
+        odooGateway.GetActiveSessionAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new PosSessionDto(1, "Main POS", "opened", 2, IsOpen: true));
 
         // Catálogo vacío
@@ -133,6 +137,8 @@ public class PosTests
         var historyRepo = Substitute.For<ISaleHistoryRepository>();
 
         odooGateway.GetActiveSessionAsync(Arg.Any<CancellationToken>())
+            .Returns(new PosSessionDto(1, "Main POS", "opened", 2, IsOpen: true));
+        odooGateway.GetActiveSessionAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new PosSessionDto(1, "Main POS", "opened", 2, IsOpen: true));
 
         odooGateway.GetProductsByIdsAsync(Arg.Any<IReadOnlyCollection<int>>(), Arg.Any<CancellationToken>())
@@ -243,6 +249,8 @@ public class PosTests
 
         odooGateway.GetActiveSessionAsync(Arg.Any<CancellationToken>())
             .Returns(new PosSessionDto(1, "Main POS", "opened", 2, IsOpen: true));
+        odooGateway.GetActiveSessionAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new PosSessionDto(1, "Main POS", "opened", 2, IsOpen: true));
 
         var useCase = new CreateSaleUseCase(odooGateway, idempotencyStore, historyRepo);
         var command = new CreateSaleCommand(
@@ -318,6 +326,8 @@ public class PosTests
         var historyRepo = Substitute.For<ISaleHistoryRepository>();
 
         odooGateway.GetActiveSessionAsync(Arg.Any<CancellationToken>())
+            .Returns(new PosSessionDto(1, "Main POS", "opened", 2, IsOpen: true));
+        odooGateway.GetActiveSessionAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new PosSessionDto(1, "Main POS", "opened", 2, IsOpen: true));
 
         odooGateway.GetProductsByIdsAsync(Arg.Any<IReadOnlyCollection<int>>(), Arg.Any<CancellationToken>())
@@ -539,6 +549,8 @@ public class PosTests
 
         odooGateway.GetActiveSessionAsync(Arg.Any<CancellationToken>())
             .Returns(new PosSessionDto(sessionId, "My Company/00002", "opened", 2, IsOpen: true));
+        odooGateway.GetActiveSessionAsync(sessionId, Arg.Any<CancellationToken>())
+            .Returns(new PosSessionDto(sessionId, "My Company/00002", "opened", 2, IsOpen: true));
 
         // Productos configurados exactamente como en Anexo F:
         // Producto A (ID 3, $15.00, IVA 15% incl.)
@@ -633,6 +645,8 @@ public class PosTests
         var idempotencyKey = Guid.NewGuid().ToString();
 
         odooGateway.GetActiveSessionAsync(Arg.Any<CancellationToken>())
+            .Returns(new PosSessionDto(sessionId, "My Company/00002", "opened", 2, IsOpen: true));
+        odooGateway.GetActiveSessionAsync(sessionId, Arg.Any<CancellationToken>())
             .Returns(new PosSessionDto(sessionId, "My Company/00002", "opened", 2, IsOpen: true));
 
         odooGateway.GetProductsByIdsAsync(Arg.Any<IReadOnlyCollection<int>>(), Arg.Any<CancellationToken>())
@@ -1010,7 +1024,7 @@ public class PosTests
 
         // Assert: El caso de uso rechaza la venta garantizando aislamiento estricto (RN-07)
         await act.Should().ThrowAsync<ApplicationValidationException>()
-            .WithMessage("*sesión de POS no se encuentra abierta o no coincide*");
+            .WithMessage("*cerrada o inactiva*");
     }
 
     // =========================================================================
@@ -1047,7 +1061,7 @@ public class PosTests
 
         // Assert: No se permite operar a usuarios sin sesión activa (Principio de Menor Privilegio)
         await act.Should().ThrowAsync<ApplicationValidationException>()
-            .WithMessage("*sesión de POS*");
+            .WithMessage("*cerrada o inactiva*");
     }
 
     // =========================================================================
@@ -1243,5 +1257,104 @@ public class PosTests
         var (byNone, countNone) = await repo.GetSalesPagedAsync(null, 1, 10, search: "NonExistent", filter: "SESSION");
         byNone.Should().BeEmpty();
         countNone.Should().Be(0);
+    }
+
+    // =========================================================================
+    // P32: Cajero reasignado en Odoo ERP mientras está en turno lanza excepción
+    //      (Validación de Titularidad de Caja en Caliente / Zero-Trust)
+    // =========================================================================
+    [Fact]
+    public async Task P32_CreateSale_CajeroReasignadoEnOdoo_LanzaExcepcion()
+    {
+        // Arrange
+        var odooGateway = Substitute.For<IOdooPosGateway>();
+        var idempotencyStore = Substitute.For<IIdempotencyStore>();
+        var historyRepo = Substitute.For<ISaleHistoryRepository>();
+
+        // La caja #1 en Odoo fue reasignada al usuario 10 ("Maria Lopez")
+        var activeSessionReassigned = new PosSessionDto(1, "POS Central", "opened", UserId: 10, IsOpen: true, UserName: "Maria Lopez");
+        odooGateway.GetActiveSessionAsync(1, Arg.Any<CancellationToken>())
+            .Returns(activeSessionReassigned);
+
+        var useCase = new CreateSaleUseCase(odooGateway, idempotencyStore, historyRepo);
+        var command = new CreateSaleCommand(
+            IdempotencyKey: "key-p32-reassigned",
+            PosSessionId: 1,
+            CustomerDocument: "1712345678",
+            CustomerName: "Consumidor Final",
+            DiscountType: "NONE",
+            DiscountValue: 0m,
+            Items: new List<CreateSaleItemDto> { new(1, 1) },
+            UserId: 5, // Cajero autenticado original con ID 5
+            OperatorName: "Juan Perez",
+            IsAdmin: false
+        );
+
+        // Act
+        var act = () => useCase.ExecuteAsync(command);
+
+        // Assert: Zero-Trust rechaza la venta porque la caja ya no pertenece a este operador
+        await act.Should().ThrowAsync<ApplicationValidationException>()
+            .WithMessage("*ya no está asignada al cajero 'Juan Perez'*")
+            .WithMessage("*El responsable actual asignado en Odoo ERP es 'Maria Lopez'*")
+            .WithMessage("*Por favor cierre sesión y vuelva a ingresar*");
+    }
+
+    // =========================================================================
+    // P33: Administrador con rol privilegiado puede operar en caja reasignada
+    // =========================================================================
+    [Fact]
+    public async Task P33_CreateSale_AdministradorEnCajaReasignada_PermiteVenta()
+    {
+        // Arrange
+        var odooGateway = Substitute.For<IOdooPosGateway>();
+        var idempotencyStore = Substitute.For<IIdempotencyStore>();
+        var historyRepo = Substitute.For<ISaleHistoryRepository>();
+
+        // La caja #1 en Odoo está asignada a otro cajero (UserId: 10, "Maria Lopez")
+        var activeSession = new PosSessionDto(1, "POS Central", "opened", UserId: 10, IsOpen: true, UserName: "Maria Lopez");
+        odooGateway.GetActiveSessionAsync(1, Arg.Any<CancellationToken>())
+            .Returns(activeSession);
+
+        odooGateway.GetProductsByIdsAsync(Arg.Any<IReadOnlyCollection<int>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ProductDto>
+            {
+                new(1, "Teclado USB", 20.00m, "TEC-01", 10m, TaxRate: 0.15m, PriceIncludesTax: false)
+            });
+
+        odooGateway.ResolvePaymentMethodIdAsync(1, "cash", Arg.Any<CancellationToken>())
+            .Returns(1);
+
+        odooGateway.SyncSaleOrderAsync(Arg.Any<SaleOrder>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new OdooSyncResultDto(true, "POS/2026/00999", 999, null));
+
+        var useCase = new CreateSaleUseCase(
+            odooGateway,
+            idempotencyStore,
+            historyRepo,
+            new IPaymentProcessor[] { new CashPaymentProcessor(odooGateway) });
+
+        var command = new CreateSaleCommand(
+            IdempotencyKey: "key-p33-admin",
+            PosSessionId: 1,
+            CustomerDocument: "1712345678",
+            CustomerName: "Consumidor Final",
+            DiscountType: "NONE",
+            DiscountValue: 0m,
+            Items: new List<CreateSaleItemDto> { new(1, 1) },
+            PaymentMethod: "Efectivo",
+            UserId: 99, // Administrador autenticado (ID 99 != 10)
+            OperatorName: "Admin General",
+            IsAdmin: true // Privilegio administrativo
+        );
+
+        // Act
+        var result = await useCase.ExecuteAsync(command);
+
+        // Assert: El administrador completa la venta exitosamente
+        result.Should().NotBeNull();
+        result.State.Should().Be("Synced");
+        result.OdooOrderReference.Should().Be("POS/2026/00999");
+        await odooGateway.Received(1).SyncSaleOrderAsync(Arg.Any<SaleOrder>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
     }
 }
