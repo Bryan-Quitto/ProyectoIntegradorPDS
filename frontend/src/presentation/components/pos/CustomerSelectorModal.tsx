@@ -219,12 +219,6 @@ export const CustomerSelectorModal: React.FC<CustomerSelectorModalProps> = ({
                             </Badge>
                           )}
                         </div>
-                        {customer.street && (
-                          <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
-                            <MapPin className="h-3 w-3 shrink-0" />
-                            <span className="truncate max-w-xs">{customer.street}</span>
-                          </div>
-                        )}
                       </TableCell>
                       <TableCell>
                         <div className="font-mono text-xs text-slate-700 font-medium">
@@ -233,6 +227,12 @@ export const CustomerSelectorModal: React.FC<CustomerSelectorModalProps> = ({
                       </TableCell>
                       <TableCell className="hidden md:table-cell">
                         <div className="space-y-0.5 text-xs text-slate-500">
+                          {customer.street && (
+                            <div className="flex items-center gap-1 text-[11px] truncate max-w-xs text-slate-600" title={customer.street}>
+                              <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                              <span className="truncate">{customer.street}</span>
+                            </div>
+                          )}
                           {customer.email && (
                             <div className="flex items-center gap-1 truncate max-w-xs">
                               <Mail className="h-3 w-3 text-slate-400 shrink-0" />
@@ -245,7 +245,7 @@ export const CustomerSelectorModal: React.FC<CustomerSelectorModalProps> = ({
                               <span>{customer.phone}</span>
                             </div>
                           )}
-                          {!customer.email && !customer.phone && (
+                          {!customer.street && !customer.email && !customer.phone && (
                             <span className="text-slate-300 italic text-[11px]">Sin teléfono/email</span>
                           )}
                         </div>

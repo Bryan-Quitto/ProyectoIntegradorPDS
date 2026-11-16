@@ -100,7 +100,7 @@ export class PosApiHttpAdapter implements IPosApiGateway {
     return await this.handleResponse<LoginResponse>(response);
   }
 
-  public async getProducts(search?: string, page?: number, pageSize?: number, criteria?: string): Promise<Product[]> {
+  public async getProducts(search?: string, page?: number, pageSize?: number, criteria?: string, onlyInStock?: boolean): Promise<Product[]> {
     const url = new URL(`${this._baseUrl}/api/products`);
     if (search?.trim()) {
       url.searchParams.set('search', search.trim());
@@ -113,6 +113,9 @@ export class PosApiHttpAdapter implements IPosApiGateway {
     }
     if (criteria?.trim()) {
       url.searchParams.set('criteria', criteria.trim());
+    }
+    if (onlyInStock) {
+      url.searchParams.set('onlyInStock', 'true');
     }
 
     const response = await this.safeFetch(url.toString(), {

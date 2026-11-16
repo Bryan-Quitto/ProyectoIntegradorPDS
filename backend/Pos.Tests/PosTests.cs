@@ -1083,16 +1083,35 @@ public class PosTests
         {
             new(18, "Producto 18", 10.0m, "BC18", 5, "CODE18", 0.15m)
         };
-        gateway.SearchProductsPagedAsync("18", 1, 8, "ID", Arg.Any<CancellationToken>())
+        gateway.SearchProductsPagedAsync("18", 1, 8, "ID", false, Arg.Any<CancellationToken>())
             .Returns((sampleProducts, 1));
 
         var useCase = new SearchProductsUseCase(gateway);
         var (items, total) = await useCase.ExecutePagedAsync("18", 1, 8, "ID");
 
-        await gateway.Received(1).SearchProductsPagedAsync("18", 1, 8, "ID", Arg.Any<CancellationToken>());
+        await gateway.Received(1).SearchProductsPagedAsync("18", 1, 8, "ID", false, Arg.Any<CancellationToken>());
         items.Should().HaveCount(1);
         total.Should().Be(1);
         items[0].Id.Should().Be(18);
+    }
+
+    [Fact]
+    public async Task P28_B_SearchProductsUseCase_PropagatesOnlyInStockToGateway()
+    {
+        var gateway = Substitute.For<IOdooPosGateway>();
+        var sampleProducts = new List<ProductDto>
+        {
+            new(18, "Producto 18", 10.0m, "BC18", 5, "CODE18", 0.15m)
+        };
+        gateway.SearchProductsPagedAsync("18", 1, 8, "ID", true, Arg.Any<CancellationToken>())
+            .Returns((sampleProducts, 1));
+
+        var useCase = new SearchProductsUseCase(gateway);
+        var (items, total) = await useCase.ExecutePagedAsync("18", 1, 8, "ID", onlyInStock: true);
+
+        await gateway.Received(1).SearchProductsPagedAsync("18", 1, 8, "ID", true, Arg.Any<CancellationToken>());
+        items.Should().HaveCount(1);
+        total.Should().Be(1);
     }
 
     // =========================================================================

@@ -28,9 +28,10 @@ public class SearchProductsUseCase
         int page = 1,
         int pageSize = 8,
         string? criteria = null,
+        bool onlyInStock = false,
         CancellationToken cancellationToken = default)
     {
-        return await _odooGateway.SearchProductsPagedAsync(query, page, pageSize, criteria, cancellationToken);
+        return await _odooGateway.SearchProductsPagedAsync(query, page, pageSize, criteria, onlyInStock, cancellationToken);
     }
 }
 

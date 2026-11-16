@@ -1017,4 +1017,49 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
       global.fetch = originalFetch;
     }
   });
+
+  it('P40: SearchCatalogUseCase propaga onlyInStock al Gateway (Catálogo 1M+)', async () => {
+    const mockProducts: Product[] = [
+      { id: 18, name: 'Producto 18', price: 10.0, barcode: 'BC18', availableQuantity: 5 },
+    ];
+    const mockGateway: IPosApiGateway = {
+      getProducts: vi.fn().mockResolvedValue(mockProducts),
+      getProductsByIds: vi.fn(),
+      getCustomers: vi.fn(),
+      getActiveSession: vi.fn(),
+      createSale: vi.fn(),
+      getSalesHistory: vi.fn(),
+      getSaleById: vi.fn(),
+    };
+
+    const useCase = new SearchCatalogUseCase(mockGateway);
+    const result = await useCase.execute('18', 1, 8, 'ID', true);
+
+    expect(mockGateway.getProducts).toHaveBeenCalledWith('18', 1, 8, 'ID', true);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(18);
+  });
+
+  it('P41: PosApiHttpAdapter incluye onlyInStock en URL params cuando onlyInStock es true', async () => {
+    const adapter = new PosApiHttpAdapter('http://localhost:5000');
+    const originalFetch = global.fetch;
+
+    try {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'x-total-count': '1' }),
+        json: async () => [{ id: 18, name: 'Prod 18', price: 10, barcode: 'B18', availableQuantity: 5 }],
+      });
+      global.fetch = mockFetch;
+
+      await adapter.getProducts('18', 1, 8, 'ID', true);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('onlyInStock=true'),
+        expect.anything()
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });

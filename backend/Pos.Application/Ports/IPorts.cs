@@ -6,7 +6,7 @@ namespace Pos.Application.Ports;
 public interface IOdooPosGateway
 {
     Task<IReadOnlyList<ProductDto>> SearchProductsAsync(string query, CancellationToken cancellationToken = default);
-    Task<(IReadOnlyList<ProductDto> Items, int TotalCount)> SearchProductsPagedAsync(string query, int page = 1, int pageSize = 8, string? criteria = null, CancellationToken cancellationToken = default);
+    Task<(IReadOnlyList<ProductDto> Items, int TotalCount)> SearchProductsPagedAsync(string query, int page = 1, int pageSize = 8, string? criteria = null, bool onlyInStock = false, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Consulta clientes en Odoo mediante el modelo res.partner (contactos/clientes activos, vat, email, etc.).

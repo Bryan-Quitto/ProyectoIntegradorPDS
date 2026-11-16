@@ -43,13 +43,18 @@ public class OdooJson2PosAdapter : IOdooPosGateway
     // Catálogo (RF-01, RF-02, RN-03)
     // ------------------------------------------------------------------
 
-    private static List<object> BuildProductDomain(string query, string? criteria = null)
+    private static List<object> BuildProductDomain(string query, string? criteria = null, bool onlyInStock = false)
     {
         var domain = new List<object>
         {
             new object[] { "available_in_pos", "=", true },
             new object[] { "sale_ok", "=", true }
         };
+
+        if (onlyInStock)
+        {
+            domain.Add(new object[] { "qty_available", ">", 0 });
+        }
 
         if (string.IsNullOrWhiteSpace(query))
         {
@@ -117,9 +122,10 @@ public class OdooJson2PosAdapter : IOdooPosGateway
         int page = 1,
         int pageSize = 8,
         string? criteria = null,
+        bool onlyInStock = false,
         CancellationToken cancellationToken = default)
     {
-        var domain = BuildProductDomain(query, criteria);
+        var domain = BuildProductDomain(query, criteria, onlyInStock);
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
         var offset = (page - 1) * pageSize;

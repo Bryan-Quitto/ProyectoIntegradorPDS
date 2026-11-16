@@ -14,6 +14,7 @@ public static class ProductEndpoints
             int? pageSize,
             string? ids,
             string? criteria,
+            bool? onlyInStock,
             SearchProductsUseCase useCase,
             GetProductsByIdsUseCase getProductsByIdsUseCase,
             CancellationToken ct) =>
@@ -31,13 +32,14 @@ public static class ProductEndpoints
                 return Results.Ok(productsByIds);
             }
 
-            if (page.HasValue || pageSize.HasValue)
+            if (page.HasValue || pageSize.HasValue || onlyInStock.HasValue)
             {
                 var (products, totalCount) = await useCase.ExecutePagedAsync(
                     search ?? string.Empty,
                     page ?? 1,
                     pageSize ?? 8,
                     criteria,
+                    onlyInStock: onlyInStock ?? false,
                     ct);
 
                 httpContext.Response.Headers["X-Total-Count"] = totalCount.ToString();

@@ -48,7 +48,7 @@ export const ProductSelectorModal: React.FC<ProductSelectorModalProps> = ({
     totalCount: serverTotalCount,
     loading: serverLoading,
     refresh,
-  } = useProducts(debouncedSearchTerm, pageNumber, pageSize, searchCriteria);
+  } = useProducts(debouncedSearchTerm, pageNumber, pageSize, searchCriteria, onlyInStock);
 
   const prevFilterRef = useRef({ search: debouncedSearchTerm, criteria: searchCriteria, inStock: onlyInStock });
   useEffect(() => {
@@ -65,9 +65,9 @@ export const ProductSelectorModal: React.FC<ProductSelectorModalProps> = ({
 
   useEffect(() => {
     if (open) {
-      void refresh(debouncedSearchTerm, pageNumber, pageSize, searchCriteria);
+      void refresh(debouncedSearchTerm, pageNumber, pageSize, searchCriteria, onlyInStock);
     }
-  }, [open, debouncedSearchTerm, pageNumber, pageSize, searchCriteria, refresh]);
+  }, [open, debouncedSearchTerm, pageNumber, pageSize, searchCriteria, onlyInStock, refresh]);
 
   const effectiveProducts = serverProducts.length > 0 || !propsProducts || propsProducts.length === 0
     ? serverProducts
@@ -208,9 +208,21 @@ export const ProductSelectorModal: React.FC<ProductSelectorModalProps> = ({
             </div>
           </div>
 
-          <span className="text-xs text-slate-500 font-mono self-end sm:self-auto">
-            {totalCount.toLocaleString()} producto(s) en Odoo
-          </span>
+          <div className="flex items-center gap-3 self-end sm:self-auto">
+            <label className="flex items-center space-x-2 text-xs font-medium text-slate-700 cursor-pointer select-none bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors">
+              <input
+                type="checkbox"
+                checked={onlyInStock}
+                onChange={(e) => setOnlyInStock(e.target.checked)}
+                className="rounded text-emerald-600 focus:ring-emerald-500 h-4 w-4"
+              />
+              <span>Solo productos con existencias disponibles</span>
+            </label>
+
+            <span className="text-xs text-slate-500 font-mono">
+              {totalCount.toLocaleString()} producto(s) en Odoo
+            </span>
+          </div>
         </div>
 
         {/* Product Catalog Table */}
@@ -281,19 +293,17 @@ export const ProductSelectorModal: React.FC<ProductSelectorModalProps> = ({
                       </TableCell>
                       <TableCell className="text-center">
                         {isOutOfStock ? (
-                          <Badge variant="danger" className="bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-mono">
+                          <Badge variant="danger" className="font-mono text-xs">
                             0 uds. (Agotado)
                           </Badge>
-                        ) : (
-                          <span
-                            className={`text-xs font-mono font-medium ${
-                              product.availableQuantity <= 3
-                                ? 'text-amber-600 font-semibold'
-                                : 'text-slate-600'
-                            }`}
-                          >
+                        ) : product.availableQuantity <= 5 ? (
+                          <Badge variant="warning" className="font-mono text-xs">
                             {product.availableQuantity} uds.
-                          </span>
+                          </Badge>
+                        ) : (
+                          <Badge variant="success" className="font-mono text-xs bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            {product.availableQuantity} uds.
+                          </Badge>
                         )}
                       </TableCell>
                       <TableCell className="text-right">

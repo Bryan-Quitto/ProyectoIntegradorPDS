@@ -62,30 +62,57 @@ export class SearchCatalogUseCase {
   }
 
   public async execute(
+    gateway: IPosApiGateway,
+    query?: string,
+    page?: number,
+    pageSize?: number,
+    criteria?: string,
+    onlyInStock?: boolean
+  ): Promise<Product[]>;
+  public async execute(
+    query?: string,
+    page?: number,
+    pageSize?: number,
+    criteria?: string,
+    onlyInStock?: boolean
+  ): Promise<Product[]>;
+  public async execute(
     queryOrGateway?: string | IPosApiGateway,
     queryOrPage?: string | number,
     pageOrPageSize?: number,
     pageSizeOrCriteria?: number | string,
-    criteria?: string
+    criteriaOrOnlyInStock?: string | boolean,
+    onlyInStockParam?: boolean
   ): Promise<Product[]> {
     if (queryOrGateway && typeof queryOrGateway === 'object' && 'getProducts' in queryOrGateway) {
       const q = typeof queryOrPage === 'string' ? queryOrPage : undefined;
       const p = typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined;
       const ps = typeof pageSizeOrCriteria === 'number' ? pageSizeOrCriteria : undefined;
-      const crit = typeof criteria === 'string' ? criteria : (typeof pageSizeOrCriteria === 'string' ? pageSizeOrCriteria : undefined);
+      const crit = typeof criteriaOrOnlyInStock === 'string' ? criteriaOrOnlyInStock : undefined;
+      const stock = typeof onlyInStockParam === 'boolean' ? onlyInStockParam : undefined;
+      if (stock !== undefined) {
+        return await queryOrGateway.getProducts(q, p, ps, crit, stock);
+      }
       if (p !== undefined || ps !== undefined || crit !== undefined) {
         return await queryOrGateway.getProducts(q, p, ps, crit);
       }
       return await queryOrGateway.getProducts(q);
     }
+
     const gateway = this._gateway;
     if (!gateway) {
       throw new Error('IPosApiGateway no provisto a SearchCatalogUseCase');
     }
+
     const q = typeof queryOrGateway === 'string' ? queryOrGateway : undefined;
-    const p = typeof queryOrPage === 'number' ? queryOrPage : (typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined);
-    const ps = typeof pageSizeOrCriteria === 'number' ? pageSizeOrCriteria : (typeof queryOrPage === 'number' && typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined);
-    const crit = typeof criteria === 'string' ? criteria : (typeof pageSizeOrCriteria === 'string' ? pageSizeOrCriteria : undefined);
+    const p = typeof queryOrPage === 'number' ? queryOrPage : undefined;
+    const ps = typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined;
+    const crit = typeof pageSizeOrCriteria === 'string' ? pageSizeOrCriteria : undefined;
+    const stock = typeof criteriaOrOnlyInStock === 'boolean' ? criteriaOrOnlyInStock : undefined;
+
+    if (stock !== undefined) {
+      return await gateway.getProducts(q, p, ps, crit, stock);
+    }
     if (p !== undefined || ps !== undefined || crit !== undefined) {
       return await gateway.getProducts(q, p, ps, crit);
     }
