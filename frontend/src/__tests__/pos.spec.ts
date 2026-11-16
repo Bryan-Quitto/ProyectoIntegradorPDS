@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Cart } from '../domain/Cart';
 import { Product } from '../domain/Product';
-import { ManageCartUseCase, CheckoutSaleUseCase, GetSaleDetailUseCase, GetSalesHistoryUseCase, SearchCustomersUseCase, LoginUseCase } from '../application/useCases/UseCases';
+import { ManageCartUseCase, CheckoutSaleUseCase, GetSaleDetailUseCase, GetSalesHistoryUseCase, SearchCustomersUseCase, LoginUseCase, GetProductsByIdsUseCase } from '../application/useCases/UseCases';
 import { Customer } from '../application/ports/IPosApiGateway';
 import { IPosApiGateway, PosApiError, SaleOrderDetailDto } from '../application/ports/IPosApiGateway';
 import { formatEcDate, formatEcTime, parseUtcDate } from '../presentation/utils/dateUtils';
@@ -80,6 +80,7 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
     // Arrange: Mock del IPosApiGateway que simula respuesta ProblemDetails 502 Bad Gateway desde Odoo
     const mockGateway: IPosApiGateway = {
       getProducts: vi.fn(),
+      getProductsByIds: vi.fn(),
       getCustomers: vi.fn(),
       getActiveSession: vi.fn(),
       createSale: vi.fn().mockRejectedValue(
@@ -163,6 +164,7 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
 
     const mockGateway: IPosApiGateway = {
       getProducts: vi.fn(),
+      getProductsByIds: vi.fn(),
       getCustomers: vi.fn(),
       getActiveSession: vi.fn(),
       createSale: vi.fn(),
@@ -361,6 +363,7 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
   it('P20: Propagación estricta de Idempotency-Key suministrada para garantizar reintentos idempotentes (RN-08)', async () => {
     const mockGateway: IPosApiGateway = {
       getProducts: vi.fn(),
+      getProductsByIds: vi.fn(),
       getCustomers: vi.fn(),
       getActiveSession: vi.fn(),
       createSale: vi.fn().mockResolvedValue({
@@ -408,6 +411,7 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
   it('P21: CheckoutSaleUseCase propaga el método de pago seleccionado al Gateway de Odoo (RF-10)', async () => {
     const mockGateway: IPosApiGateway = {
       getProducts: vi.fn(),
+      getProductsByIds: vi.fn(),
       getCustomers: vi.fn(),
       getActiveSession: vi.fn(),
       createSale: vi.fn().mockResolvedValue({
@@ -471,6 +475,7 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
 
     const mockGateway: IPosApiGateway = {
       getProducts: vi.fn(),
+      getProductsByIds: vi.fn(),
       getCustomers: vi.fn().mockResolvedValue(mockCustomers),
       getActiveSession: vi.fn(),
       createSale: vi.fn(),
@@ -493,6 +498,7 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
   it('P24: CheckoutSaleUseCase enlaza partnerId a la venta en Odoo', async () => {
     const mockGateway: IPosApiGateway = {
       getProducts: vi.fn(),
+      getProductsByIds: vi.fn(),
       getCustomers: vi.fn(),
       getActiveSession: vi.fn(),
       createSale: vi.fn().mockResolvedValue({
@@ -574,6 +580,7 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
         posConfigName: 'Caja 1',
       }),
       getProducts: vi.fn(),
+      getProductsByIds: vi.fn(),
       getCustomers: vi.fn(),
       getActiveSession: vi.fn(),
       createSale: vi.fn(),
@@ -699,6 +706,7 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
 
     const mockGateway: IPosApiGateway = {
       getProducts: vi.fn(),
+      getProductsByIds: vi.fn(),
       getCustomers: vi.fn(),
       getActiveSession: vi.fn(),
       createSale: vi.fn(),
@@ -787,6 +795,7 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
 
     const mockGateway: IPosApiGateway = {
       getProducts: vi.fn(),
+      getProductsByIds: vi.fn(),
       getSalesHistory: vi.fn(),
       getActiveSession: vi.fn(),
       getSaleById: vi.fn(),
@@ -854,6 +863,7 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
 
     const mockGateway: IPosApiGateway = {
       getProducts: vi.fn(),
+      getProductsByIds: vi.fn(),
       getSalesHistory: vi.fn(),
       getActiveSession: vi.fn(),
       getSaleById: vi.fn(),
@@ -896,5 +906,35 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
     expect(cart.items[0].productId).toBe(prodB.id);
     expect(cart.items[0].quantity).toBe(1);
     expect(cart.subtotal).toBe(15.0);
+  });
+
+  it('P36: GetProductsByIdsUseCase consulta stock por IDs y retorna la lista mapeada (Catálogo 1M+)', async () => {
+    const mockProducts: Product[] = [
+      { id: 18, name: 'Producto 18', price: 10.0, barcode: 'BC18', availableQuantity: 5 },
+      { id: 208, name: 'Producto POS 0000200', price: 25.0, barcode: 'BC208', availableQuantity: 15 },
+    ];
+
+    const mockGateway: IPosApiGateway = {
+      getProducts: vi.fn(),
+      getProductsByIds: vi.fn().mockResolvedValue(mockProducts),
+      getCustomers: vi.fn(),
+      getActiveSession: vi.fn(),
+      createSale: vi.fn(),
+      getSalesHistory: vi.fn(),
+      getSaleById: vi.fn(),
+    };
+
+    const useCase = new GetProductsByIdsUseCase(mockGateway);
+    const result = await useCase.execute([18, 208]);
+
+    expect(mockGateway.getProductsByIds).toHaveBeenCalledWith([18, 208]);
+    expect(result).toHaveLength(2);
+    expect(result[0].id).toBe(18);
+    expect(result[1].id).toBe(208);
+    expect(result[1].availableQuantity).toBe(15);
+
+    // Si se pasa array vacío retorna array vacío sin llamar al gateway
+    const emptyResult = await useCase.execute([]);
+    expect(emptyResult).toEqual([]);
   });
 });

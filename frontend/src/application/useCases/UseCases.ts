@@ -88,6 +88,21 @@ export class SearchCatalogUseCase {
   }
 }
 
+export class GetProductsByIdsUseCase {
+  private readonly _gateway: IPosApiGateway;
+
+  constructor(gateway: IPosApiGateway) {
+    this._gateway = gateway;
+  }
+
+  public async execute(ids: number[]): Promise<Product[]> {
+    if (!ids || ids.length === 0) {
+      return [];
+    }
+    return await this._gateway.getProductsByIds(ids);
+  }
+}
+
 export class SearchCustomersUseCase {
   private readonly _gateway?: IPosApiGateway;
 

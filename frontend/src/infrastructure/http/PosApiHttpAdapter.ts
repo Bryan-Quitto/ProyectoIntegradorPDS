@@ -139,6 +139,33 @@ export class PosApiHttpAdapter implements IPosApiGateway {
     return result;
   }
 
+  public async getProductsByIds(ids: number[]): Promise<Product[]> {
+    if (!ids || ids.length === 0) {
+      return [];
+    }
+    const distinctIds = Array.from(new Set(ids));
+    const url = new URL(`${this._baseUrl}/api/products`);
+    url.searchParams.set('ids', distinctIds.join(','));
+
+    const response = await this.safeFetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        ...this.getAuthHeader(),
+      },
+    });
+
+    const raw = await this.handleResponse<any[]>(response);
+    return raw.map((p) => ({
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      barcode: p.barcode ?? '',
+      availableQuantity: p.availableQuantity ?? 0,
+      defaultCode: p.defaultCode || p.default_code || '',
+    }));
+  }
+
   public async getCustomers(search?: string, page?: number, pageSize?: number): Promise<Customer[]> {
     const url = new URL(`${this._baseUrl}/api/customers`);
     if (search?.trim()) {

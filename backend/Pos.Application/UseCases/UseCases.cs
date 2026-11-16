@@ -33,6 +33,19 @@ public class SearchProductsUseCase
     }
 }
 
+public class GetProductsByIdsUseCase
+{
+    private readonly IOdooPosGateway _gateway;
+
+    public GetProductsByIdsUseCase(IOdooPosGateway gateway)
+    {
+        _gateway = gateway;
+    }
+
+    public Task<IReadOnlyList<ProductDto>> ExecuteAsync(int[] productIds, CancellationToken ct = default)
+        => _gateway.GetProductsByIdsAsync(productIds, ct);
+}
+
 public class SearchCustomersUseCase
 {
     private readonly IOdooPosGateway _odooGateway;

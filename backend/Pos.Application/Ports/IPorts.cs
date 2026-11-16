@@ -19,6 +19,7 @@ public interface IOdooPosGateway
     /// Los IDs inexistentes o no habilitados simplemente no se devuelven.
     /// </summary>
     Task<IReadOnlyList<ProductDto>> GetProductsByIdsAsync(IReadOnlyCollection<int> productIds, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ProductDto>> GetProductsByIdsAsync(int[] productIds, CancellationToken cancellationToken = default);
 
     Task<OdooUserAuthDto?> AuthenticateUserAsync(string username, string password, CancellationToken cancellationToken = default);
 

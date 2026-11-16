@@ -39,6 +39,7 @@ builder.Configuration.AddEnvironmentVariables();
 
 // 2. Registro de Servicios de Infraestructura y Aplicación
 builder.Services.AddInfrastructureServices(builder.Configuration);
+builder.Services.AddScoped<GetProductsByIdsUseCase>();
 
 // 3. Configuración de Autenticación JWT Bearer
 // Resuelto para RNF-04 / RNF-05: Lectura directa desde Configuration sin invocar BuildServiceProvider (Eliminación warning ASP0000)

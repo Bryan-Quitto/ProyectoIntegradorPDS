@@ -205,19 +205,18 @@ public class OdooJson2PosAdapter : IOdooPosGateway
         return (customers, totalCount);
     }
 
-    public async Task<IReadOnlyList<ProductDto>> GetProductsByIdsAsync(IReadOnlyCollection<int> productIds, CancellationToken cancellationToken = default)
-    {
-        if (productIds.Count == 0)
-            return Array.Empty<ProductDto>();
+    public Task<IReadOnlyList<ProductDto>> GetProductsByIdsAsync(IReadOnlyCollection<int> productIds, CancellationToken cancellationToken = default)
+        => GetProductsByIdsAsync(productIds.ToArray(), cancellationToken);
 
+    public async Task<IReadOnlyList<ProductDto>> GetProductsByIdsAsync(int[] productIds, CancellationToken cancellationToken = default)
+    {
+        if (productIds.Length == 0) return Array.Empty<ProductDto>();
+        var distinctIds = productIds.Distinct().ToArray();
         var domain = new List<object>
         {
-            new object[] { "id", "in", productIds.ToArray() },
-            new object[] { "available_in_pos", "=", true },
-            new object[] { "sale_ok", "=", true }
+            new object[] { "id", "in", distinctIds }
         };
-
-        return await ReadProductsAsync(domain, limit: productIds.Count, offset: 0, ct: cancellationToken);
+        return await ReadProductsAsync(domain, limit: distinctIds.Length, offset: 0, ct: cancellationToken);
     }
 
     private async Task<IReadOnlyList<ProductDto>> ReadProductsAsync(List<object> domain, int limit, int offset = 0, CancellationToken ct = default)

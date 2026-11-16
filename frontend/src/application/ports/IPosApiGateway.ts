@@ -99,6 +99,7 @@ export interface LoginResponse {
 export interface IPosApiGateway {
   login?(request: LoginRequest): Promise<LoginResponse>;
   getProducts(search?: string, page?: number, pageSize?: number): Promise<Product[]>;
+  getProductsByIds(ids: number[]): Promise<Product[]>;
   getCustomers(search?: string, page?: number, pageSize?: number): Promise<Customer[]>;
   getActiveSession(): Promise<PosSession | null>;
   createSale(request: CreateSaleRequest): Promise<SaleOrderResult>;

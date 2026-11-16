@@ -9,6 +9,7 @@ import { Cart } from '@/domain/Cart';
 import { CartItem } from '@/domain/CartItem';
 import { validateEcuadorianId } from '@/domain/ecuadorianIdValidator';
 import { useAuthStore } from '../stores/useAuthStore';
+import { getProductsByIdsUseCase } from '@/di';
 import { PaymentModal } from '../components/pos/PaymentModal';
 import { CustomerSelectorModal } from '../components/pos/CustomerSelectorModal';
 import { ProductSelectorModal } from '../components/pos/ProductSelectorModal';
@@ -257,8 +258,20 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
     setPreflightErrorAlert(null);
   }, [items, selectedCustomer]);
 
+  // Cache de productos seleccionados en el carrito para soporte de catálogo masivo (1M+)
+  const [cartProductsMap, setCartProductsMap] = useState<Map<number, Product>>(new Map());
+
   // Mapa de productos de Odoo para consultar stock disponible en tiempo real
-  const productMap = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const productMap = useMemo(() => {
+    const map = new Map<number, Product>();
+    for (const p of products) {
+      map.set(p.id, p);
+    }
+    for (const [id, p] of cartProductsMap) {
+      map.set(id, p);
+    }
+    return map;
+  }, [products, cartProductsMap]);
 
   // Validación de cédula o RUC del cliente seleccionado
   const customerDocValidation = useMemo(() => {
@@ -319,6 +332,9 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
   // Manejador de selección o reemplazo de productos desde el Modal dedicado
   const handleSelectOrReplaceProduct = (product: Product) => {
     if (!hasAssignedSession) return;
+
+    // Registrar el producto seleccionado en cartProductsMap para asegurar su stock en catálogo 1M+
+    setCartProductsMap((prev) => new Map(prev).set(product.id, product));
 
     if (replacingItem) {
       const oldId = replacingItem.productId;
@@ -425,8 +441,34 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
       const freshProducts = freshData?.products ?? products;
       const freshSession = freshData?.session ?? activeSession;
 
-      // 2. Mapeo de stock actualizado
-      const freshMap = new Map(freshProducts.map((p) => [p.id, p]));
+      // Consultar a Odoo el stock fresco específicamente de los IDs de los ítems en el carrito (Catálogo 1M+)
+      const cartProductIds = items.map((i) => i.productId);
+      const freshCartProducts = cartProductIds.length > 0
+        ? await getProductsByIdsUseCase.execute(cartProductIds)
+        : [];
+
+      // Actualizar el estado de productos del carrito con el stock fresco de Odoo
+      if (freshCartProducts.length > 0) {
+        setCartProductsMap((prev) => {
+          const next = new Map(prev);
+          for (const p of freshCartProducts) {
+            next.set(p.id, p);
+          }
+          return next;
+        });
+      }
+
+      // 2. Mapeo de stock actualizado combinando base, caché local y datos frescos por ID
+      const freshMap = new Map<number, Product>();
+      for (const p of freshProducts) {
+        freshMap.set(p.id, p);
+      }
+      for (const [id, p] of cartProductsMap) {
+        freshMap.set(id, p);
+      }
+      for (const p of freshCartProducts) {
+        freshMap.set(p.id, p);
+      }
 
       // 3. Verificación de stock de cada producto en la orden
       const stockErrors: string[] = [];
