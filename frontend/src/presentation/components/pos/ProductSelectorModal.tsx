@@ -1,6 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Search, Plus, Check, AlertCircle, Package, X, CheckCircle2, ArrowLeftRight } from 'lucide-react';
 import { Product } from '@/domain/Product';
+import { useProducts } from '@/presentation/hooks/useProducts';
 import { Dialog } from '../ui/Dialog';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
@@ -14,7 +15,7 @@ export type ProductSearchCriteria = 'ALL' | 'NAME' | 'CODE' | 'ID';
 export interface ProductSelectorModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  products: Product[];
+  products?: Product[];
   selectedProductIds: number[];
   onSelectProduct: (product: Product) => void;
   loading?: boolean;
@@ -25,7 +26,7 @@ export interface ProductSelectorModalProps {
 export const ProductSelectorModal: React.FC<ProductSelectorModalProps> = ({
   open,
   onOpenChange,
-  products,
+  products: propsProducts,
   selectedProductIds,
   onSelectProduct,
   loading = false,
@@ -41,43 +42,42 @@ export const ProductSelectorModal: React.FC<ProductSelectorModalProps> = ({
 
   const debouncedSearchTerm = useDebounce(searchTerm, 350);
 
+  // Consulta paginada del lado del servidor para soportar 1,000,000+ de productos en Odoo
+  const {
+    products: serverProducts,
+    totalCount: serverTotalCount,
+    loading: serverLoading,
+    refresh,
+  } = useProducts(debouncedSearchTerm, pageNumber, pageSize);
+
+  const prevFilterRef = useRef({ search: debouncedSearchTerm, criteria: searchCriteria, inStock: onlyInStock });
   useEffect(() => {
-    setPageNumber(1);
-    setStockError(null);
-  }, [debouncedSearchTerm, onlyInStock, searchCriteria, open]);
+    if (
+      prevFilterRef.current.search !== debouncedSearchTerm ||
+      prevFilterRef.current.criteria !== searchCriteria ||
+      prevFilterRef.current.inStock !== onlyInStock
+    ) {
+      prevFilterRef.current = { search: debouncedSearchTerm, criteria: searchCriteria, inStock: onlyInStock };
+      setPageNumber(1);
+      setStockError(null);
+    }
+  }, [debouncedSearchTerm, searchCriteria, onlyInStock]);
 
-  const filteredProducts = useMemo(() => {
-    const term = debouncedSearchTerm.trim().toLowerCase();
-    const cleanIdTerm = term.replace(/^id:?|^#/i, '').trim();
+  useEffect(() => {
+    if (open) {
+      void refresh(debouncedSearchTerm, pageNumber, pageSize);
+    }
+  }, [open, debouncedSearchTerm, pageNumber, pageSize, refresh]);
 
-    return products.filter((p) => {
-      if (onlyInStock && p.availableQuantity <= 0) {
-        return false;
-      }
-
-      if (!term) return true;
-
-      const matchName = (p.name || '').toLowerCase().includes(term);
-      const matchCode =
-        (p.defaultCode && p.defaultCode.toLowerCase().includes(term)) ||
-        (p.barcode && p.barcode.toLowerCase().includes(term));
-      const matchId =
-        cleanIdTerm !== '' && (String(p.id) === cleanIdTerm || String(p.id).includes(cleanIdTerm));
-
-      if (searchCriteria === 'ID') return matchId;
-      if (searchCriteria === 'NAME') return matchName;
-      if (searchCriteria === 'CODE') return matchCode;
-      return matchName || matchCode || matchId;
-    });
-  }, [products, onlyInStock, debouncedSearchTerm, searchCriteria]);
-
-  const totalCount = filteredProducts.length;
+  const effectiveProducts = serverProducts.length > 0 || !propsProducts || propsProducts.length === 0
+    ? serverProducts
+    : propsProducts;
+  const totalCount = serverTotalCount > 0
+    ? serverTotalCount
+    : (effectiveProducts as any)?.totalCount ?? effectiveProducts.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-
-  const pagedProducts = useMemo(() => {
-    const start = (pageNumber - 1) * pageSize;
-    return filteredProducts.slice(start, start + pageSize);
-  }, [filteredProducts, pageNumber, pageSize]);
+  const pagedProducts = effectiveProducts;
+  const isEffectiveLoading = loading || serverLoading;
 
   const isReplaceMode = Boolean(replacingProductId);
 
@@ -121,46 +121,51 @@ export const ProductSelectorModal: React.FC<ProductSelectorModalProps> = ({
       open={open}
       onOpenChange={onOpenChange}
       title={
-        isReplaceMode ? (
-          <div className="flex items-center gap-2 text-slate-900">
-            <ArrowLeftRight className="h-5 w-5 text-blue-600" />
-            <span>Reemplazar Producto: {replacingProductName || `#${replacingProductId}`}</span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 text-slate-900">
-            <Package className="h-5 w-5 text-emerald-600" />
-            <span>Catálogo Completo de Productos Odoo</span>
-          </div>
-        )
+        <div className="flex items-center gap-2 text-slate-900">
+          {isReplaceMode ? (
+            <>
+              <ArrowLeftRight className="h-5 w-5 text-amber-600" />
+              <span>Reemplazar Producto en la Orden</span>
+            </>
+          ) : (
+            <>
+              <Package className="h-5 w-5 text-emerald-600" />
+              <span>Catálogo de Productos Odoo (product.product)</span>
+            </>
+          )}
+        </div>
       }
       description={
         isReplaceMode
-          ? 'Seleccione el producto por el cual desea reemplazar este ítem en el carrito de compras.'
-          : 'Seleccione productos disponibles en el POS de Odoo para agregarlos a la orden actual.'
+          ? `Seleccione el nuevo producto que sustituirá a "${replacingProductName}". Se preservarán los ítems restantes de la orden.`
+          : 'Seleccione los productos del catálogo de Odoo ERP para agregarlos a la orden en curso.'
       }
       className="max-w-4xl"
     >
       <div className="space-y-4 pt-1">
-        {/* Banner de Error por Falta de Stock Disponible (Punto 1 y RN-03) */}
+        {/* Banner de Stock Error (RN-03) */}
         {stockError && (
-          <div className="p-3.5 rounded-lg bg-rose-50 border border-rose-300 text-rose-800 text-xs sm:text-sm flex items-start space-x-2.5 animate-in fade-in">
-            <AlertCircle className="h-5 w-5 text-rose-600 shrink-0 mt-0.5" />
-            <div className="flex-1 font-semibold leading-relaxed">{stockError}</div>
-            <button
+          <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center justify-between gap-2 shadow-xs">
+            <div className="flex items-center space-x-2">
+              <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+              <span className="font-medium">{stockError}</span>
+            </div>
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               onClick={() => setStockError(null)}
-              className="text-rose-500 hover:text-rose-700 ml-2"
-              title="Cerrar advertencia"
+              className="h-6 px-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-100"
             >
-              <X className="h-4 w-4" />
-            </button>
+              <X className="h-3.5 w-3.5" />
+            </Button>
           </div>
         )}
 
-        {/* Banner de Modo Reemplazo si aplica */}
+        {/* Banner Informativo de Modo Reemplazo */}
         {isReplaceMode && (
-          <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-900 text-xs sm:text-sm flex items-start space-x-2.5">
-            <ArrowLeftRight className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+          <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center space-x-2">
+            <ArrowLeftRight className="h-4 w-4 text-amber-600 shrink-0" />
             <div>
               <span className="font-semibold">Modo Reemplazo:</span> El producto actual a reemplazar está deshabilitado. Puede elegir cualquier otro producto del catálogo o uno ya incluido en la orden (se incrementará su cantidad).
             </div>
@@ -170,7 +175,6 @@ export const ProductSelectorModal: React.FC<ProductSelectorModalProps> = ({
         {/* Controles de Búsqueda, Combobox y Filtro de Existencias */}
         <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
           <div className="flex items-center gap-2 flex-1 sm:max-w-md">
-            {/* Combobox Select Estilizado (Punto 6) */}
             <select
               value={searchCriteria}
               onChange={(e) => setSearchCriteria(e.target.value as ProductSearchCriteria)}
@@ -204,25 +208,19 @@ export const ProductSelectorModal: React.FC<ProductSelectorModalProps> = ({
             </div>
           </div>
 
-          <label className="flex items-center space-x-2 text-xs font-medium text-slate-700 cursor-pointer select-none bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
-            <input
-              type="checkbox"
-              checked={onlyInStock}
-              onChange={(e) => setOnlyInStock(e.target.checked)}
-              className="rounded text-emerald-600 focus:ring-emerald-500 h-4 w-4"
-            />
-            <span>Solo productos con existencias disponibles</span>
-          </label>
+          <span className="text-xs text-slate-500 font-mono self-end sm:self-auto">
+            {totalCount.toLocaleString()} producto(s) en Odoo
+          </span>
         </div>
 
         {/* Product Catalog Table */}
         <div className="max-h-96 overflow-y-auto border border-slate-200 rounded-lg">
-          {loading ? (
+          {isEffectiveLoading ? (
             <div className="p-8 text-center text-slate-500">
               <Package className="h-8 w-8 mx-auto text-emerald-600 animate-spin mb-2" />
               <span>Cargando catálogo desde Odoo 20...</span>
             </div>
-          ) : filteredProducts.length === 0 ? (
+          ) : pagedProducts.length === 0 ? (
             <div className="p-8 text-center text-slate-400">
               No se encontraron productos coincidentes con los filtros aplicados.
             </div>
@@ -239,104 +237,83 @@ export const ProductSelectorModal: React.FC<ProductSelectorModalProps> = ({
               </TableHeader>
               <TableBody>
                 {pagedProducts.map((product) => {
-                  const isCurrentReplacingProduct = isReplaceMode && product.id === replacingProductId;
-                  const isAlreadyInCart = selectedProductIds.includes(product.id);
+                  const isInCart = selectedProductIds.includes(product.id);
+                  const isCurrentReplacing = isReplaceMode && product.id === replacingProductId;
                   const isOutOfStock = product.availableQuantity <= 0;
 
                   return (
                     <TableRow
                       key={product.id}
                       className={
-                        isCurrentReplacingProduct
-                          ? 'bg-slate-100/70 opacity-75'
-                          : isAlreadyInCart
-                          ? 'bg-amber-50/40'
+                        isCurrentReplacing
+                          ? 'bg-amber-50/60 opacity-60'
+                          : isInCart
+                          ? 'bg-emerald-50/40'
+                          : isOutOfStock
+                          ? 'bg-rose-50/30'
                           : ''
                       }
                     >
-                      <TableCell className="font-mono font-bold text-xs text-slate-500">
+                      <TableCell className="font-mono text-xs text-slate-500 font-semibold">
                         #{product.id}
                       </TableCell>
                       <TableCell>
-                        <div className="font-medium text-slate-800">{product.name}</div>
-                        {product.defaultCode ? (
-                          <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/60 inline-block mt-0.5">
-                            {product.defaultCode}
-                          </span>
-                        ) : null}
-                        {isCurrentReplacingProduct ? (
-                          <div className="text-[11px] text-slate-500 font-semibold flex items-center gap-1 mt-0.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400 inline-block"></span>
-                            Producto seleccionado para reemplazo
-                          </div>
-                        ) : isAlreadyInCart && isReplaceMode ? (
-                          <div className="text-[11px] text-blue-700 font-semibold flex items-center gap-1 mt-0.5">
-                            <CheckCircle2 className="w-3 h-3 text-blue-600" />
-                            Ya en el carrito (se sumará +1)
-                          </div>
-                        ) : isAlreadyInCart ? (
-                          <div className="text-[11px] text-amber-700 font-semibold flex items-center gap-1 mt-0.5">
-                            <CheckCircle2 className="w-3 h-3 text-amber-600" />
-                            Ya agregado al carrito
-                          </div>
-                        ) : null}
+                        <div className="font-medium text-slate-900 text-xs sm:text-sm flex items-center gap-1.5">
+                          <span>{product.name}</span>
+                          {isInCart && !isReplaceMode && (
+                            <Badge variant="success" className="bg-emerald-100 text-emerald-800 text-[10px] px-1.5 py-0">
+                              En carrito
+                            </Badge>
+                          )}
+                          {isCurrentReplacing && (
+                            <Badge variant="warning" className="bg-amber-100 text-amber-800 text-[10px] px-1.5 py-0">
+                              Producto actual
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="text-xs text-slate-400 space-x-2 font-mono mt-0.5">
+                          {product.defaultCode && <span>Cód: {product.defaultCode}</span>}
+                          {product.barcode && <span>Barras: {product.barcode}</span>}
+                        </div>
                       </TableCell>
-                      <TableCell className="text-right font-mono font-semibold text-emerald-700">
-                        ${Number(product.price).toFixed(2)}
+                      <TableCell className="text-right font-medium text-slate-800 font-mono text-xs sm:text-sm">
+                        ${product.price.toFixed(2)}
                       </TableCell>
                       <TableCell className="text-center">
                         {isOutOfStock ? (
-                          <Badge variant="danger">Agotado</Badge>
-                        ) : product.availableQuantity <= 5 ? (
-                          <Badge variant="warning">{product.availableQuantity} uds.</Badge>
+                          <Badge variant="danger" className="bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-mono">
+                            0 uds. (Agotado)
+                          </Badge>
                         ) : (
-                          <Badge variant="success">{product.availableQuantity} uds.</Badge>
+                          <span
+                            className={`text-xs font-mono font-medium ${
+                              product.availableQuantity <= 3
+                                ? 'text-amber-600 font-semibold'
+                                : 'text-slate-600'
+                            }`}
+                          >
+                            {product.availableQuantity} uds.
+                          </span>
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        {isCurrentReplacingProduct ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={true}
-                            className="h-8 px-3 text-xs bg-slate-200 text-slate-500 border border-slate-300 opacity-60 cursor-not-allowed ml-auto select-none"
-                            title="No se puede reemplazar por el mismo producto"
-                          >
-                            <span>Producto actual</span>
-                          </Button>
-                        ) : isReplaceMode && isAlreadyInCart ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={() => handleSelect(product)}
-                            className={`h-8 px-2.5 text-xs flex items-center space-x-1 ml-auto ${
-                              isOutOfStock
-                                ? 'bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-700 border border-slate-300'
-                                : 'bg-amber-600 hover:bg-amber-700 text-white'
-                            }`}
-                            title="Incrementa en 1 la cantidad de este ítem existente"
-                          >
-                            <Plus className="h-3.5 w-3.5" />
-                            <span>Sumar +1</span>
-                          </Button>
+                        {isCurrentReplacing ? (
+                          <span className="text-xs text-amber-600 italic">Actual</span>
                         ) : isReplaceMode ? (
                           <Button
                             type="button"
                             size="sm"
+                            variant="default"
                             onClick={() => handleSelect(product)}
-                            className={`h-8 px-2.5 text-xs flex items-center space-x-1 ml-auto ${
-                              isOutOfStock
-                                ? 'bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-700 border border-slate-300'
-                                : 'bg-blue-600 hover:bg-blue-700 text-white'
-                            }`}
+                            className="h-8 px-2.5 text-xs flex items-center space-x-1 ml-auto bg-amber-600 hover:bg-amber-700 text-white"
                           >
                             <ArrowLeftRight className="h-3.5 w-3.5" />
-                            <span>Reemplazar</span>
+                            <span>Sustituir</span>
                           </Button>
-                        ) : isAlreadyInCart ? (
-                          <span className="inline-flex items-center text-xs font-semibold text-amber-700 bg-amber-100/80 px-2.5 py-1 rounded-md space-x-1">
-                            <Check className="h-3.5 w-3.5 text-amber-600" />
-                            <span>Agregado</span>
+                        ) : isInCart ? (
+                          <span className="text-xs text-emerald-600 font-medium flex items-center justify-end space-x-1">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            <span>En orden</span>
                           </span>
                         ) : (
                           <Button
@@ -363,7 +340,7 @@ export const ProductSelectorModal: React.FC<ProductSelectorModalProps> = ({
           )}
 
           {/* Pagination */}
-          {filteredProducts.length > 0 && (
+          {!isEffectiveLoading && totalCount > 0 && (
             <Pagination
               currentPage={pageNumber}
               totalPages={totalPages}
@@ -377,7 +354,7 @@ export const ProductSelectorModal: React.FC<ProductSelectorModalProps> = ({
         {/* Footer */}
         <div className="flex justify-between items-center pt-2 border-t border-slate-100">
           <span className="text-xs text-slate-500">
-            Mostrando {pagedProducts.length} de {totalCount} productos
+            Total en Odoo: <strong className="font-semibold text-slate-800">{totalCount.toLocaleString()}</strong> productos (product.product)
           </span>
           <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             Cerrar Catálogo

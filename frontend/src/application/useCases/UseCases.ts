@@ -61,15 +61,30 @@ export class SearchCatalogUseCase {
     this._gateway = gateway;
   }
 
-  public async execute(queryOrGateway?: string | IPosApiGateway, query?: string): Promise<Product[]> {
+  public async execute(
+    queryOrGateway?: string | IPosApiGateway,
+    queryOrPage?: string | number,
+    pageOrPageSize?: number,
+    pageSize?: number
+  ): Promise<Product[]> {
     if (queryOrGateway && typeof queryOrGateway === 'object' && 'getProducts' in queryOrGateway) {
-      return await queryOrGateway.getProducts(query);
+      const q = typeof queryOrPage === 'string' ? queryOrPage : undefined;
+      if (pageOrPageSize !== undefined || pageSize !== undefined) {
+        return await queryOrGateway.getProducts(q, pageOrPageSize, pageSize);
+      }
+      return await queryOrGateway.getProducts(q);
     }
     const gateway = this._gateway;
     if (!gateway) {
       throw new Error('IPosApiGateway no provisto a SearchCatalogUseCase');
     }
-    return await gateway.getProducts(queryOrGateway as string | undefined);
+    const q = typeof queryOrGateway === 'string' ? queryOrGateway : undefined;
+    const p = typeof queryOrPage === 'number' ? queryOrPage : (typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined);
+    const ps = typeof pageSize === 'number' ? pageSize : (typeof queryOrPage === 'number' && typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined);
+    if (p !== undefined || ps !== undefined) {
+      return await gateway.getProducts(q, p, ps);
+    }
+    return await gateway.getProducts(q);
   }
 }
 
@@ -80,15 +95,30 @@ export class SearchCustomersUseCase {
     this._gateway = gateway;
   }
 
-  public async execute(queryOrGateway?: string | IPosApiGateway, query?: string): Promise<Customer[]> {
+  public async execute(
+    queryOrGateway?: string | IPosApiGateway,
+    queryOrPage?: string | number,
+    pageOrPageSize?: number,
+    pageSize?: number
+  ): Promise<Customer[]> {
     if (queryOrGateway && typeof queryOrGateway === 'object' && 'getCustomers' in queryOrGateway) {
-      return await queryOrGateway.getCustomers(query);
+      const q = typeof queryOrPage === 'string' ? queryOrPage : undefined;
+      if (pageOrPageSize !== undefined || pageSize !== undefined) {
+        return await queryOrGateway.getCustomers(q, pageOrPageSize, pageSize);
+      }
+      return await queryOrGateway.getCustomers(q);
     }
     const gateway = this._gateway;
     if (!gateway) {
       throw new Error('IPosApiGateway no provisto a SearchCustomersUseCase');
     }
-    return await gateway.getCustomers(queryOrGateway as string | undefined);
+    const q = typeof queryOrGateway === 'string' ? queryOrGateway : undefined;
+    const p = typeof queryOrPage === 'number' ? queryOrPage : (typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined);
+    const ps = typeof pageSize === 'number' ? pageSize : (typeof queryOrPage === 'number' && typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined);
+    if (p !== undefined || ps !== undefined) {
+      return await gateway.getCustomers(q, p, ps);
+    }
+    return await gateway.getCustomers(q);
   }
 }
 

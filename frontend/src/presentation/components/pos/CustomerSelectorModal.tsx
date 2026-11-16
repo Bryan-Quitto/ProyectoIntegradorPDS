@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Search, Check, AlertCircle, Users, User, X, Building2, Phone, Mail, MapPin } from 'lucide-react';
 import { Customer } from '@/application/ports/IPosApiGateway';
 import { useCustomers } from '@/presentation/hooks/useCustomers';
@@ -32,53 +32,35 @@ export const CustomerSelectorModal: React.FC<CustomerSelectorModalProps> = ({
 
   const debouncedSearchTerm = useDebounce(searchTerm, 350);
 
-  const { customers, loading, error, refresh } = useCustomers(debouncedSearchTerm);
+  // Consulta con paginación server-side sobre Odoo 20 (res.partner)
+  const { customers, totalCount, loading, error, refresh } = useCustomers(
+    debouncedSearchTerm,
+    pageNumber,
+    pageSize
+  );
 
+  // Reset de página al cambiar término de búsqueda o criterio
+  const prevFilterRef = useRef({ search: debouncedSearchTerm, criteria: searchCriteria });
   useEffect(() => {
-    setPageNumber(1);
+    if (
+      prevFilterRef.current.search !== debouncedSearchTerm ||
+      prevFilterRef.current.criteria !== searchCriteria
+    ) {
+      prevFilterRef.current = { search: debouncedSearchTerm, criteria: searchCriteria };
+      setPageNumber(1);
+    }
   }, [debouncedSearchTerm, searchCriteria]);
 
   useEffect(() => {
     if (open) {
-      refresh(debouncedSearchTerm);
+      refresh(debouncedSearchTerm, pageNumber, pageSize);
     }
-  }, [open, debouncedSearchTerm, refresh]);
+  }, [open, debouncedSearchTerm, pageNumber, pageSize, refresh]);
 
-  const filteredCustomers = useMemo(() => {
-    // Excluir Consumidor Final de la lista tabular (ya cuenta con botón dedicado y no es un cliente particular)
-    const baseList = customers.filter((c) => {
-      const isFinalConsumer =
-        c.vat === '9999999999999' ||
-        (c.name || '').toLowerCase().includes('consumidor final');
-      return !isFinalConsumer;
-    });
-
-    const term = searchTerm.trim().toLowerCase();
-    if (!term) return baseList;
-
-    const cleanIdTerm = term.replace(/^id:?|^#/i, '').trim();
-
-    return baseList.filter((c) => {
-      const matchId = cleanIdTerm !== '' && (String(c.id) === cleanIdTerm || String(c.id).includes(cleanIdTerm));
-      const matchName = (c.name || '').toLowerCase().includes(term);
-      const matchVat = (c.vat || '').toLowerCase().includes(term);
-
-      if (searchCriteria === 'id') return matchId;
-      if (searchCriteria === 'name') return matchName;
-      if (searchCriteria === 'vat') return matchVat;
-      return matchId || matchName || matchVat;
-    });
-  }, [customers, searchTerm, searchCriteria]);
-
-  const totalCount = filteredCustomers.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const pagedCustomers = customers;
 
-  const pagedCustomers = useMemo(() => {
-    const start = (pageNumber - 1) * pageSize;
-    return filteredCustomers.slice(start, start + pageSize);
-  }, [filteredCustomers, pageNumber, pageSize]);
-
-  const handleSelect = (customer: Customer) => {
+  const handleSelectCustomer = (customer: Customer) => {
     onSelectCustomer(customer);
     onOpenChange(false);
   };
@@ -90,12 +72,12 @@ export const CustomerSelectorModal: React.FC<CustomerSelectorModalProps> = ({
 
   const getPlaceholder = () => {
     switch (searchCriteria) {
-      case 'id':
-        return 'Buscar específicamente por ID Odoo (ej: 1, 2)...';
       case 'name':
-        return 'Buscar por nombres o razón social...';
+        return 'Buscar por nombre o razón social...';
       case 'vat':
-        return 'Buscar por Cédula o RUC (10 o 13 dígitos)...';
+        return 'Buscar por cédula o RUC (ej. 1712...)...';
+      case 'id':
+        return 'Buscar por ID de Odoo (ej. 15, #42)...';
       case 'all':
       default:
         return 'Buscar cliente por nombre, identificación o ID de Odoo...';
@@ -139,7 +121,6 @@ export const CustomerSelectorModal: React.FC<CustomerSelectorModalProps> = ({
         {/* Controles de Búsqueda y Combobox de Filtros */}
         <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
           <div className="flex items-center gap-2 flex-1 sm:max-w-lg">
-            {/* Combobox Select Estilizado (Punto 6) */}
             <select
               value={searchCriteria}
               onChange={(e) => setSearchCriteria(e.target.value as SearchCriteriaType)}
@@ -174,98 +155,120 @@ export const CustomerSelectorModal: React.FC<CustomerSelectorModalProps> = ({
           </div>
 
           <span className="text-xs text-slate-500 font-mono self-end sm:self-auto">
-            {totalCount} cliente(s) en Odoo
+            {totalCount.toLocaleString()} cliente(s) en Odoo
           </span>
         </div>
 
-        {/* Tabla de Clientes Odoo */}
-        <div className="max-h-96 overflow-y-auto border border-slate-200 rounded-lg">
+        {/* Mensaje de Error */}
+        {error && (
+          <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center space-x-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {/* Tabla de Clientes con Scroll */}
+        <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-xs">
           {loading ? (
-            <div className="p-8 text-center text-slate-500">
-              <Users className="h-8 w-8 mx-auto text-emerald-600 animate-spin mb-2" />
-              <span>Consultando clientes en Odoo ERP (res.partner)...</span>
-            </div>
-          ) : error ? (
-            <div className="p-6 text-center text-rose-600 flex items-center justify-center space-x-2">
-              <AlertCircle className="h-5 w-5" />
-              <span>{error}</span>
-            </div>
-          ) : filteredCustomers.length === 0 ? (
             <div className="p-8 text-center text-slate-400">
-              No se encontraron clientes coincidentes con el criterio de búsqueda.
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600 mx-auto mb-2" />
+              <span className="text-xs">Consultando clientes en Odoo ERP...</span>
+            </div>
+          ) : customers.length === 0 ? (
+            <div className="p-8 text-center text-slate-400 space-y-1">
+              <Users className="h-8 w-8 mx-auto text-slate-300 stroke-1" />
+              <p className="text-sm font-medium text-slate-600">No se encontraron clientes.</p>
+              <p className="text-xs text-slate-400">
+                {searchTerm
+                  ? `Ningún contacto coincide con "${searchTerm}".`
+                  : 'No hay contactos registrados en Odoo ERP.'}
+              </p>
             </div>
           ) : (
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-20">ID Odoo</TableHead>
+                <TableRow className="bg-slate-50 text-slate-600 text-xs">
+                  <TableHead className="w-16">ID Odoo</TableHead>
                   <TableHead>Nombre / Razón Social</TableHead>
                   <TableHead>Identificación</TableHead>
-                  <TableHead>Dirección / Contacto</TableHead>
-                  <TableHead className="text-right w-36">Acción</TableHead>
+                  <TableHead className="hidden md:table-cell">Contacto</TableHead>
+                  <TableHead className="text-right w-24">Acción</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {pagedCustomers.map((customer) => {
-                  const isCurrentlySelected = selectedCustomerId === customer.id;
+                  const isSelected = selectedCustomerId === customer.id;
 
                   return (
                     <TableRow
                       key={customer.id}
-                      className={isCurrentlySelected ? 'bg-emerald-50/60' : ''}
+                      className={`hover:bg-slate-50 transition-colors ${
+                        isSelected ? 'bg-emerald-50/60' : ''
+                      }`}
                     >
-                      <TableCell className="font-mono font-bold text-xs text-emerald-700">
+                      <TableCell className="font-mono text-xs text-slate-500 font-semibold">
                         #{customer.id}
                       </TableCell>
                       <TableCell>
-                        <div className="font-semibold text-slate-900">{customer.name}</div>
-                        {customer.email && (
-                          <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
-                            <Mail className="w-3 h-3 text-slate-400" />
-                            <span>{customer.email}</span>
+                        <div className="font-medium text-xs sm:text-sm text-slate-900 flex items-center gap-1.5">
+                          <span>{customer.name}</span>
+                          {isSelected && (
+                            <Badge variant="success" className="bg-emerald-100 text-emerald-800 text-[10px] px-1.5 py-0">
+                              Seleccionado
+                            </Badge>
+                          )}
+                        </div>
+                        {customer.street && (
+                          <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                            <MapPin className="h-3 w-3 shrink-0" />
+                            <span className="truncate max-w-xs">{customer.street}</span>
                           </div>
                         )}
                       </TableCell>
-                      <TableCell className="font-mono text-xs text-slate-700">
-                        {customer.vat ? (
-                          <Badge variant="default" className="font-mono bg-slate-100 text-slate-800">
-                            {customer.vat}
-                          </Badge>
-                        ) : (
-                          <span className="text-slate-400 text-xs italic">Sin RUC</span>
-                        )}
+                      <TableCell>
+                        <div className="font-mono text-xs text-slate-700 font-medium">
+                          {customer.vat || <span className="text-slate-400 italic font-sans text-[11px]">Sin Cédula/RUC</span>}
+                        </div>
                       </TableCell>
-                      <TableCell className="text-xs text-slate-600">
-                        {customer.street ? (
-                          <div className="flex items-center gap-1 text-[11px] truncate max-w-xs" title={customer.street}>
-                            <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                            <span className="truncate">{customer.street}</span>
-                          </div>
-                        ) : null}
-                        {customer.phone ? (
-                          <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
-                            <Phone className="w-3 h-3 text-slate-400 shrink-0" />
-                            <span>{customer.phone}</span>
-                          </div>
-                        ) : null}
-                        {!customer.street && !customer.phone ? (
-                          <span className="text-slate-400 text-xs italic">—</span>
-                        ) : null}
+                      <TableCell className="hidden md:table-cell">
+                        <div className="space-y-0.5 text-xs text-slate-500">
+                          {customer.email && (
+                            <div className="flex items-center gap-1 truncate max-w-xs">
+                              <Mail className="h-3 w-3 text-slate-400 shrink-0" />
+                              <span className="truncate">{customer.email}</span>
+                            </div>
+                          )}
+                          {customer.phone && (
+                            <div className="flex items-center gap-1">
+                              <Phone className="h-3 w-3 text-slate-400 shrink-0" />
+                              <span>{customer.phone}</span>
+                            </div>
+                          )}
+                          {!customer.email && !customer.phone && (
+                            <span className="text-slate-300 italic text-[11px]">Sin teléfono/email</span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right">
                         <Button
                           type="button"
                           size="sm"
-                          variant={isCurrentlySelected ? 'secondary' : 'default'}
-                          onClick={() => handleSelect(customer)}
-                          className={
-                            isCurrentlySelected
-                              ? 'h-8 px-3 text-xs bg-emerald-100 text-emerald-800 border-emerald-300'
-                              : 'h-8 px-3 text-xs bg-emerald-600 hover:bg-emerald-700 text-white'
-                          }
+                          variant={isSelected ? 'outline' : 'default'}
+                          onClick={() => handleSelectCustomer(customer)}
+                          className={`h-7 px-2 text-xs flex items-center space-x-1 ml-auto ${
+                            isSelected
+                              ? 'border-emerald-500 text-emerald-700 bg-emerald-50/50'
+                              : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                          }`}
                         >
-                          <Check className="h-3.5 w-3.5 mr-1" />
-                          <span>{isCurrentlySelected ? 'Seleccionado' : 'Seleccionar'}</span>
+                          {isSelected ? (
+                            <>
+                              <Check className="h-3.5 w-3.5" />
+                              <span>Activo</span>
+                            </>
+                          ) : (
+                            <span>Seleccionar</span>
+                          )}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -276,7 +279,7 @@ export const CustomerSelectorModal: React.FC<CustomerSelectorModalProps> = ({
           )}
 
           {/* Paginación */}
-          {filteredCustomers.length > 0 && (
+          {!loading && !error && totalCount > 0 && (
             <Pagination
               currentPage={pageNumber}
               totalPages={totalPages}
@@ -290,7 +293,7 @@ export const CustomerSelectorModal: React.FC<CustomerSelectorModalProps> = ({
         {/* Footer */}
         <div className="flex justify-between items-center pt-2 border-t border-slate-100">
           <span className="text-xs text-slate-500">
-            Mostrando {pagedCustomers.length} de {totalCount} clientes en Odoo
+            Total en Odoo: <strong className="font-semibold text-slate-800">{totalCount.toLocaleString()}</strong> clientes (res.partner)
           </span>
           <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
             Cerrar

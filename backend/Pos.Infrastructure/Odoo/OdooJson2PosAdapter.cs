@@ -43,7 +43,7 @@ public class OdooJson2PosAdapter : IOdooPosGateway
     // Catálogo (RF-01, RF-02, RN-03)
     // ------------------------------------------------------------------
 
-    public async Task<IReadOnlyList<ProductDto>> SearchProductsAsync(string query, CancellationToken cancellationToken = default)
+    private static List<object> BuildProductDomain(string query)
     {
         var domain = new List<object>
         {
@@ -74,11 +74,36 @@ public class OdooJson2PosAdapter : IOdooPosGateway
                 domain.Add(new object[] { "barcode", "ilike", q });
             }
         }
-
-        return await ReadProductsAsync(domain, limit: 100, cancellationToken);
+        return domain;
     }
 
-    public async Task<IReadOnlyList<CustomerDto>> SearchCustomersAsync(string query, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<ProductDto>> SearchProductsAsync(string query, CancellationToken cancellationToken = default)
+    {
+        var domain = BuildProductDomain(query);
+        return await ReadProductsAsync(domain, limit: 100, offset: 0, ct: cancellationToken);
+    }
+
+    public async Task<(IReadOnlyList<ProductDto> Items, int TotalCount)> SearchProductsPagedAsync(
+        string query,
+        int page = 1,
+        int pageSize = 8,
+        CancellationToken cancellationToken = default)
+    {
+        var domain = BuildProductDomain(query);
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var offset = (page - 1) * pageSize;
+
+        var countNode = await CallAsync("product.product", "search_count", new { domain }, cancellationToken);
+        var totalCount = countNode is JsonValue v && v.TryGetValue<int>(out var c)
+            ? c
+            : (int.TryParse(countNode?.ToString(), out var parsedC) ? parsedC : 0);
+
+        var items = await ReadProductsAsync(domain, limit: pageSize, offset: offset, ct: cancellationToken);
+        return (items, totalCount);
+    }
+
+    private static List<object> BuildCustomerDomain(string query)
     {
         // [FILTRADO ESTRICTO DE CLIENTES EXTERNOS EN ODOO]:
         // 1. user_ids = false: Excluye usuarios del sistema (Administrator, cajeros, operadores, empleados).
@@ -117,14 +142,11 @@ public class OdooJson2PosAdapter : IOdooPosGateway
                 domain.Add(new object[] { "email", "ilike", q });
             }
         }
+        return domain;
+    }
 
-        var result = await CallAsync("res.partner", "search_read", new
-        {
-            domain,
-            fields = new[] { "id", "name", "vat", "email", "street", "phone", "customer_rank" },
-            limit = 50
-        }, cancellationToken);
-
+    private static List<CustomerDto> ParseCustomers(JsonNode? result)
+    {
         var rows = result?.AsArray() ?? new JsonArray();
         var customers = new List<CustomerDto>(rows.Count);
         foreach (var row in rows)
@@ -146,8 +168,41 @@ public class OdooJson2PosAdapter : IOdooPosGateway
 
             customers.Add(new CustomerDto(id, name, vat, email, street, phone));
         }
-
         return customers;
+    }
+
+    public async Task<IReadOnlyList<CustomerDto>> SearchCustomersAsync(string query, CancellationToken cancellationToken = default)
+    {
+        var (items, _) = await SearchCustomersPagedAsync(query, page: 1, pageSize: 50, cancellationToken);
+        return items;
+    }
+
+    public async Task<(IReadOnlyList<CustomerDto> Items, int TotalCount)> SearchCustomersPagedAsync(
+        string query,
+        int page = 1,
+        int pageSize = 8,
+        CancellationToken cancellationToken = default)
+    {
+        var domain = BuildCustomerDomain(query);
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        var offset = (page - 1) * pageSize;
+
+        var countNode = await CallAsync("res.partner", "search_count", new { domain }, cancellationToken);
+        var totalCount = countNode is JsonValue v && v.TryGetValue<int>(out var c)
+            ? c
+            : (int.TryParse(countNode?.ToString(), out var parsedC) ? parsedC : 0);
+
+        var result = await CallAsync("res.partner", "search_read", new
+        {
+            domain,
+            fields = new[] { "id", "name", "vat", "email", "street", "phone", "customer_rank" },
+            limit = pageSize,
+            offset
+        }, cancellationToken);
+
+        var customers = ParseCustomers(result);
+        return (customers, totalCount);
     }
 
     public async Task<IReadOnlyList<ProductDto>> GetProductsByIdsAsync(IReadOnlyCollection<int> productIds, CancellationToken cancellationToken = default)
@@ -162,16 +217,17 @@ public class OdooJson2PosAdapter : IOdooPosGateway
             new object[] { "sale_ok", "=", true }
         };
 
-        return await ReadProductsAsync(domain, limit: productIds.Count, cancellationToken);
+        return await ReadProductsAsync(domain, limit: productIds.Count, offset: 0, ct: cancellationToken);
     }
 
-    private async Task<IReadOnlyList<ProductDto>> ReadProductsAsync(List<object> domain, int limit, CancellationToken ct)
+    private async Task<IReadOnlyList<ProductDto>> ReadProductsAsync(List<object> domain, int limit, int offset = 0, CancellationToken ct = default)
     {
         var result = await CallAsync("product.product", "search_read", new
         {
             domain,
             fields = ProductFields,
-            limit
+            limit,
+            offset
         }, ct);
 
         var rows = result?.AsArray() ?? new JsonArray();

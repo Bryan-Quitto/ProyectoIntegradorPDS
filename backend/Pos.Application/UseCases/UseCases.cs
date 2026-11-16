@@ -22,6 +22,15 @@ public class SearchProductsUseCase
     {
         return await _odooGateway.SearchProductsAsync(query, cancellationToken);
     }
+
+    public async Task<(IReadOnlyList<ProductDto> Items, int TotalCount)> ExecutePagedAsync(
+        string query,
+        int page = 1,
+        int pageSize = 8,
+        CancellationToken cancellationToken = default)
+    {
+        return await _odooGateway.SearchProductsPagedAsync(query, page, pageSize, cancellationToken);
+    }
 }
 
 public class SearchCustomersUseCase
@@ -36,6 +45,15 @@ public class SearchCustomersUseCase
     public async Task<IReadOnlyList<CustomerDto>> ExecuteAsync(string query, CancellationToken cancellationToken = default)
     {
         return await _odooGateway.SearchCustomersAsync(query, cancellationToken);
+    }
+
+    public async Task<(IReadOnlyList<CustomerDto> Items, int TotalCount)> ExecutePagedAsync(
+        string query,
+        int page = 1,
+        int pageSize = 8,
+        CancellationToken cancellationToken = default)
+    {
+        return await _odooGateway.SearchCustomersPagedAsync(query, page, pageSize, cancellationToken);
     }
 }
 

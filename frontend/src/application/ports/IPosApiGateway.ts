@@ -98,8 +98,8 @@ export interface LoginResponse {
 
 export interface IPosApiGateway {
   login?(request: LoginRequest): Promise<LoginResponse>;
-  getProducts(search?: string): Promise<Product[]>;
-  getCustomers(search?: string): Promise<Customer[]>;
+  getProducts(search?: string, page?: number, pageSize?: number): Promise<Product[]>;
+  getCustomers(search?: string, page?: number, pageSize?: number): Promise<Customer[]>;
   getActiveSession(): Promise<PosSession | null>;
   createSale(request: CreateSaleRequest): Promise<SaleOrderResult>;
   getSalesHistory(page?: number, pageSize?: number, search?: string, filter?: string): Promise<SaleOrderResult[]>;

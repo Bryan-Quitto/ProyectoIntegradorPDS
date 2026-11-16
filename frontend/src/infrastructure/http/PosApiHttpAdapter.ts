@@ -100,10 +100,16 @@ export class PosApiHttpAdapter implements IPosApiGateway {
     return await this.handleResponse<LoginResponse>(response);
   }
 
-  public async getProducts(search?: string): Promise<Product[]> {
+  public async getProducts(search?: string, page?: number, pageSize?: number): Promise<Product[]> {
     const url = new URL(`${this._baseUrl}/api/products`);
     if (search?.trim()) {
       url.searchParams.set('search', search.trim());
+    }
+    if (page) {
+      url.searchParams.set('page', String(page));
+    }
+    if (pageSize) {
+      url.searchParams.set('pageSize', String(pageSize));
     }
 
     const response = await this.safeFetch(url.toString(), {
@@ -114,8 +120,9 @@ export class PosApiHttpAdapter implements IPosApiGateway {
       },
     });
 
+    const totalCountHeader = response.headers.get('x-total-count') || response.headers.get('X-Total-Count');
     const raw = await this.handleResponse<any[]>(response);
-    return raw.map((p) => ({
+    const result = raw.map((p) => ({
       id: p.id,
       name: p.name,
       price: p.price,
@@ -123,12 +130,25 @@ export class PosApiHttpAdapter implements IPosApiGateway {
       availableQuantity: p.availableQuantity ?? 0,
       defaultCode: p.defaultCode || p.default_code || '',
     }));
+    if (totalCountHeader) {
+      const parsed = parseInt(totalCountHeader, 10);
+      if (!isNaN(parsed)) {
+        (result as any).totalCount = parsed;
+      }
+    }
+    return result;
   }
 
-  public async getCustomers(search?: string): Promise<Customer[]> {
+  public async getCustomers(search?: string, page?: number, pageSize?: number): Promise<Customer[]> {
     const url = new URL(`${this._baseUrl}/api/customers`);
     if (search?.trim()) {
       url.searchParams.set('search', search.trim());
+    }
+    if (page) {
+      url.searchParams.set('page', String(page));
+    }
+    if (pageSize) {
+      url.searchParams.set('pageSize', String(pageSize));
     }
 
     const response = await this.safeFetch(url.toString(), {
@@ -139,8 +159,9 @@ export class PosApiHttpAdapter implements IPosApiGateway {
       },
     });
 
+    const totalCountHeader = response.headers.get('x-total-count') || response.headers.get('X-Total-Count');
     const raw = await this.handleResponse<any[]>(response);
-    return raw.map((c) => ({
+    const result = raw.map((c) => ({
       id: c.id,
       name: c.name,
       vat: c.vat ?? '',
@@ -148,6 +169,13 @@ export class PosApiHttpAdapter implements IPosApiGateway {
       street: c.street ?? '',
       phone: c.phone ?? '',
     }));
+    if (totalCountHeader) {
+      const parsed = parseInt(totalCountHeader, 10);
+      if (!isNaN(parsed)) {
+        (result as any).totalCount = parsed;
+      }
+    }
+    return result;
   }
 
   public async getActiveSession(): Promise<PosSession | null> {

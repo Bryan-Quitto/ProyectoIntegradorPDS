@@ -6,11 +6,13 @@ namespace Pos.Application.Ports;
 public interface IOdooPosGateway
 {
     Task<IReadOnlyList<ProductDto>> SearchProductsAsync(string query, CancellationToken cancellationToken = default);
+    Task<(IReadOnlyList<ProductDto> Items, int TotalCount)> SearchProductsPagedAsync(string query, int page = 1, int pageSize = 8, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Consulta clientes en Odoo mediante el modelo res.partner (contactos/clientes activos, vat, email, etc.).
     /// </summary>
     Task<IReadOnlyList<CustomerDto>> SearchCustomersAsync(string query, CancellationToken cancellationToken = default);
+    Task<(IReadOnlyList<CustomerDto> Items, int TotalCount)> SearchCustomersPagedAsync(string query, int page = 1, int pageSize = 8, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Obtiene los productos habilitados para el POS con los IDs indicados (precio y regla fiscal oficiales, RN-03).
