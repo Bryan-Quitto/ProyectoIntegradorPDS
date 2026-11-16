@@ -36,7 +36,8 @@ export const CustomerSelectorModal: React.FC<CustomerSelectorModalProps> = ({
   const { customers, totalCount, loading, error, refresh } = useCustomers(
     debouncedSearchTerm,
     pageNumber,
-    pageSize
+    pageSize,
+    searchCriteria
   );
 
   // Reset de página al cambiar término de búsqueda o criterio
@@ -53,9 +54,9 @@ export const CustomerSelectorModal: React.FC<CustomerSelectorModalProps> = ({
 
   useEffect(() => {
     if (open) {
-      refresh(debouncedSearchTerm, pageNumber, pageSize);
+      refresh(debouncedSearchTerm, pageNumber, pageSize, searchCriteria);
     }
-  }, [open, debouncedSearchTerm, pageNumber, pageSize, refresh]);
+  }, [open, debouncedSearchTerm, pageNumber, pageSize, searchCriteria, refresh]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const pagedCustomers = customers;

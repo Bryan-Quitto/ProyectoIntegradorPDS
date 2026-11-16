@@ -15,6 +15,7 @@ public static class CustomerEndpoints
             string? search,
             int? page,
             int? pageSize,
+            string? criteria,
             SearchCustomersUseCase useCase,
             CancellationToken ct) =>
         {
@@ -24,6 +25,7 @@ public static class CustomerEndpoints
                     search ?? string.Empty,
                     page ?? 1,
                     pageSize ?? 8,
+                    criteria,
                     ct);
 
                 httpContext.Response.Headers["X-Total-Count"] = totalCount.ToString();

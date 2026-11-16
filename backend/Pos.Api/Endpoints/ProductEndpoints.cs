@@ -13,6 +13,7 @@ public static class ProductEndpoints
             int? page,
             int? pageSize,
             string? ids,
+            string? criteria,
             SearchProductsUseCase useCase,
             GetProductsByIdsUseCase getProductsByIdsUseCase,
             CancellationToken ct) =>
@@ -36,6 +37,7 @@ public static class ProductEndpoints
                     search ?? string.Empty,
                     page ?? 1,
                     pageSize ?? 8,
+                    criteria,
                     ct);
 
                 httpContext.Response.Headers["X-Total-Count"] = totalCount.ToString();

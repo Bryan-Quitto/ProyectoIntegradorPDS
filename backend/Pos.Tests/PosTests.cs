@@ -1071,4 +1071,50 @@ public class PosTests
         result.Should().NotBeNull();
         result.Should().BeEmpty();
     }
+
+    // =========================================================================
+    // P28: SearchProductsUseCase propaga criterio de búsqueda a Gateway (Catálogo 1M+)
+    // =========================================================================
+    [Fact]
+    public async Task P28_SearchProductsUseCase_PropagatesCriteriaToGateway()
+    {
+        var gateway = Substitute.For<IOdooPosGateway>();
+        var sampleProducts = new List<ProductDto>
+        {
+            new(18, "Producto 18", 10.0m, "BC18", 5, "CODE18", 0.15m)
+        };
+        gateway.SearchProductsPagedAsync("18", 1, 8, "ID", Arg.Any<CancellationToken>())
+            .Returns((sampleProducts, 1));
+
+        var useCase = new SearchProductsUseCase(gateway);
+        var (items, total) = await useCase.ExecutePagedAsync("18", 1, 8, "ID");
+
+        await gateway.Received(1).SearchProductsPagedAsync("18", 1, 8, "ID", Arg.Any<CancellationToken>());
+        items.Should().HaveCount(1);
+        total.Should().Be(1);
+        items[0].Id.Should().Be(18);
+    }
+
+    // =========================================================================
+    // P29: SearchCustomersUseCase propaga criterio de búsqueda a Gateway (Catálogo 1M+)
+    // =========================================================================
+    [Fact]
+    public async Task P29_SearchCustomersUseCase_PropagatesCriteriaToGateway()
+    {
+        var gateway = Substitute.For<IOdooPosGateway>();
+        var sampleCustomers = new List<CustomerDto>
+        {
+            new(15, "Cliente 15", "1712345678", "c15@test.com", "Av. 15", "099123456")
+        };
+        gateway.SearchCustomersPagedAsync("15", 1, 8, "id", Arg.Any<CancellationToken>())
+            .Returns((sampleCustomers, 1));
+
+        var useCase = new SearchCustomersUseCase(gateway);
+        var (items, total) = await useCase.ExecutePagedAsync("15", 1, 8, "id");
+
+        await gateway.Received(1).SearchCustomersPagedAsync("15", 1, 8, "id", Arg.Any<CancellationToken>());
+        items.Should().HaveCount(1);
+        total.Should().Be(1);
+        items[0].Id.Should().Be(15);
+    }
 }

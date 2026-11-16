@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Cart } from '../domain/Cart';
 import { Product } from '../domain/Product';
-import { ManageCartUseCase, CheckoutSaleUseCase, GetSaleDetailUseCase, GetSalesHistoryUseCase, SearchCustomersUseCase, LoginUseCase, GetProductsByIdsUseCase } from '../application/useCases/UseCases';
+import { ManageCartUseCase, CheckoutSaleUseCase, GetSaleDetailUseCase, GetSalesHistoryUseCase, SearchCustomersUseCase, SearchCatalogUseCase, LoginUseCase, GetProductsByIdsUseCase } from '../application/useCases/UseCases';
 import { Customer } from '../application/ports/IPosApiGateway';
 import { IPosApiGateway, PosApiError, SaleOrderDetailDto } from '../application/ports/IPosApiGateway';
 import { formatEcDate, formatEcTime, parseUtcDate } from '../presentation/utils/dateUtils';
@@ -936,5 +936,85 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
     // Si se pasa array vacío retorna array vacío sin llamar al gateway
     const emptyResult = await useCase.execute([]);
     expect(emptyResult).toEqual([]);
+  });
+
+  it('P37: SearchCatalogUseCase propaga criterios de búsqueda al Gateway (Catálogo 1M+)', async () => {
+    const mockProducts: Product[] = [
+      { id: 18, name: 'Producto 18', price: 10.0, barcode: 'BC18', availableQuantity: 5 },
+    ];
+    const mockGateway: IPosApiGateway = {
+      getProducts: vi.fn().mockResolvedValue(mockProducts),
+      getProductsByIds: vi.fn(),
+      getCustomers: vi.fn(),
+      getActiveSession: vi.fn(),
+      createSale: vi.fn(),
+      getSalesHistory: vi.fn(),
+      getSaleById: vi.fn(),
+    };
+
+    const useCase = new SearchCatalogUseCase(mockGateway);
+    const result = await useCase.execute('18', 1, 8, 'ID');
+
+    expect(mockGateway.getProducts).toHaveBeenCalledWith('18', 1, 8, 'ID');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(18);
+  });
+
+  it('P38: SearchCustomersUseCase propaga criterios de búsqueda al Gateway (Catálogo 1M+)', async () => {
+    const mockCustomers: Customer[] = [
+      { id: 15, name: 'Cliente 15', vat: '1712345678' },
+    ];
+    const mockGateway: IPosApiGateway = {
+      getProducts: vi.fn(),
+      getProductsByIds: vi.fn(),
+      getCustomers: vi.fn().mockResolvedValue(mockCustomers),
+      getActiveSession: vi.fn(),
+      createSale: vi.fn(),
+      getSalesHistory: vi.fn(),
+      getSaleById: vi.fn(),
+    };
+
+    const useCase = new SearchCustomersUseCase(mockGateway);
+    const result = await useCase.execute('15', 1, 8, 'id');
+
+    expect(mockGateway.getCustomers).toHaveBeenCalledWith('15', 1, 8, 'id');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(15);
+  });
+
+  it('P39: PosApiHttpAdapter incluye criteria en URL params para productos y clientes', async () => {
+    const adapter = new PosApiHttpAdapter('http://localhost:5000');
+    const originalFetch = global.fetch;
+
+    try {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'x-total-count': '1' }),
+        json: async () => [{ id: 18, name: 'Prod 18', price: 10, barcode: 'B18', availableQuantity: 5 }],
+      });
+      global.fetch = mockFetch;
+
+      await adapter.getProducts('18', 1, 8, 'ID');
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('criteria=ID'),
+        expect.anything()
+      );
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'x-total-count': '1' }),
+        json: async () => [{ id: 15, name: 'Client 15', vat: '1712345678' }],
+      });
+
+      await adapter.getCustomers('15', 1, 8, 'id');
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('criteria=id'),
+        expect.anything()
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 });

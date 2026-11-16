@@ -100,7 +100,7 @@ export class PosApiHttpAdapter implements IPosApiGateway {
     return await this.handleResponse<LoginResponse>(response);
   }
 
-  public async getProducts(search?: string, page?: number, pageSize?: number): Promise<Product[]> {
+  public async getProducts(search?: string, page?: number, pageSize?: number, criteria?: string): Promise<Product[]> {
     const url = new URL(`${this._baseUrl}/api/products`);
     if (search?.trim()) {
       url.searchParams.set('search', search.trim());
@@ -110,6 +110,9 @@ export class PosApiHttpAdapter implements IPosApiGateway {
     }
     if (pageSize) {
       url.searchParams.set('pageSize', String(pageSize));
+    }
+    if (criteria?.trim()) {
+      url.searchParams.set('criteria', criteria.trim());
     }
 
     const response = await this.safeFetch(url.toString(), {
@@ -166,7 +169,7 @@ export class PosApiHttpAdapter implements IPosApiGateway {
     }));
   }
 
-  public async getCustomers(search?: string, page?: number, pageSize?: number): Promise<Customer[]> {
+  public async getCustomers(search?: string, page?: number, pageSize?: number, criteria?: string): Promise<Customer[]> {
     const url = new URL(`${this._baseUrl}/api/customers`);
     if (search?.trim()) {
       url.searchParams.set('search', search.trim());
@@ -176,6 +179,9 @@ export class PosApiHttpAdapter implements IPosApiGateway {
     }
     if (pageSize) {
       url.searchParams.set('pageSize', String(pageSize));
+    }
+    if (criteria?.trim()) {
+      url.searchParams.set('criteria', criteria.trim());
     }
 
     const response = await this.safeFetch(url.toString(), {

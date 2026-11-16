@@ -27,9 +27,10 @@ public class SearchProductsUseCase
         string query,
         int page = 1,
         int pageSize = 8,
+        string? criteria = null,
         CancellationToken cancellationToken = default)
     {
-        return await _odooGateway.SearchProductsPagedAsync(query, page, pageSize, cancellationToken);
+        return await _odooGateway.SearchProductsPagedAsync(query, page, pageSize, criteria, cancellationToken);
     }
 }
 
@@ -64,9 +65,10 @@ public class SearchCustomersUseCase
         string query,
         int page = 1,
         int pageSize = 8,
+        string? criteria = null,
         CancellationToken cancellationToken = default)
     {
-        return await _odooGateway.SearchCustomersPagedAsync(query, page, pageSize, cancellationToken);
+        return await _odooGateway.SearchCustomersPagedAsync(query, page, pageSize, criteria, cancellationToken);
     }
 }
 

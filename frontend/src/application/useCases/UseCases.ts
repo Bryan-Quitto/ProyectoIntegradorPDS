@@ -65,12 +65,16 @@ export class SearchCatalogUseCase {
     queryOrGateway?: string | IPosApiGateway,
     queryOrPage?: string | number,
     pageOrPageSize?: number,
-    pageSize?: number
+    pageSizeOrCriteria?: number | string,
+    criteria?: string
   ): Promise<Product[]> {
     if (queryOrGateway && typeof queryOrGateway === 'object' && 'getProducts' in queryOrGateway) {
       const q = typeof queryOrPage === 'string' ? queryOrPage : undefined;
-      if (pageOrPageSize !== undefined || pageSize !== undefined) {
-        return await queryOrGateway.getProducts(q, pageOrPageSize, pageSize);
+      const p = typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined;
+      const ps = typeof pageSizeOrCriteria === 'number' ? pageSizeOrCriteria : undefined;
+      const crit = typeof criteria === 'string' ? criteria : (typeof pageSizeOrCriteria === 'string' ? pageSizeOrCriteria : undefined);
+      if (p !== undefined || ps !== undefined || crit !== undefined) {
+        return await queryOrGateway.getProducts(q, p, ps, crit);
       }
       return await queryOrGateway.getProducts(q);
     }
@@ -80,9 +84,10 @@ export class SearchCatalogUseCase {
     }
     const q = typeof queryOrGateway === 'string' ? queryOrGateway : undefined;
     const p = typeof queryOrPage === 'number' ? queryOrPage : (typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined);
-    const ps = typeof pageSize === 'number' ? pageSize : (typeof queryOrPage === 'number' && typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined);
-    if (p !== undefined || ps !== undefined) {
-      return await gateway.getProducts(q, p, ps);
+    const ps = typeof pageSizeOrCriteria === 'number' ? pageSizeOrCriteria : (typeof queryOrPage === 'number' && typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined);
+    const crit = typeof criteria === 'string' ? criteria : (typeof pageSizeOrCriteria === 'string' ? pageSizeOrCriteria : undefined);
+    if (p !== undefined || ps !== undefined || crit !== undefined) {
+      return await gateway.getProducts(q, p, ps, crit);
     }
     return await gateway.getProducts(q);
   }
@@ -114,12 +119,16 @@ export class SearchCustomersUseCase {
     queryOrGateway?: string | IPosApiGateway,
     queryOrPage?: string | number,
     pageOrPageSize?: number,
-    pageSize?: number
+    pageSizeOrCriteria?: number | string,
+    criteria?: string
   ): Promise<Customer[]> {
     if (queryOrGateway && typeof queryOrGateway === 'object' && 'getCustomers' in queryOrGateway) {
       const q = typeof queryOrPage === 'string' ? queryOrPage : undefined;
-      if (pageOrPageSize !== undefined || pageSize !== undefined) {
-        return await queryOrGateway.getCustomers(q, pageOrPageSize, pageSize);
+      const p = typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined;
+      const ps = typeof pageSizeOrCriteria === 'number' ? pageSizeOrCriteria : undefined;
+      const crit = typeof criteria === 'string' ? criteria : (typeof pageSizeOrCriteria === 'string' ? pageSizeOrCriteria : undefined);
+      if (p !== undefined || ps !== undefined || crit !== undefined) {
+        return await queryOrGateway.getCustomers(q, p, ps, crit);
       }
       return await queryOrGateway.getCustomers(q);
     }
@@ -129,9 +138,10 @@ export class SearchCustomersUseCase {
     }
     const q = typeof queryOrGateway === 'string' ? queryOrGateway : undefined;
     const p = typeof queryOrPage === 'number' ? queryOrPage : (typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined);
-    const ps = typeof pageSize === 'number' ? pageSize : (typeof queryOrPage === 'number' && typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined);
-    if (p !== undefined || ps !== undefined) {
-      return await gateway.getCustomers(q, p, ps);
+    const ps = typeof pageSizeOrCriteria === 'number' ? pageSizeOrCriteria : (typeof queryOrPage === 'number' && typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined);
+    const crit = typeof criteria === 'string' ? criteria : (typeof pageSizeOrCriteria === 'string' ? pageSizeOrCriteria : undefined);
+    if (p !== undefined || ps !== undefined || crit !== undefined) {
+      return await gateway.getCustomers(q, p, ps, crit);
     }
     return await gateway.getCustomers(q);
   }

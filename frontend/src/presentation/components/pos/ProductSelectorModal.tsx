@@ -48,7 +48,7 @@ export const ProductSelectorModal: React.FC<ProductSelectorModalProps> = ({
     totalCount: serverTotalCount,
     loading: serverLoading,
     refresh,
-  } = useProducts(debouncedSearchTerm, pageNumber, pageSize);
+  } = useProducts(debouncedSearchTerm, pageNumber, pageSize, searchCriteria);
 
   const prevFilterRef = useRef({ search: debouncedSearchTerm, criteria: searchCriteria, inStock: onlyInStock });
   useEffect(() => {
@@ -65,9 +65,9 @@ export const ProductSelectorModal: React.FC<ProductSelectorModalProps> = ({
 
   useEffect(() => {
     if (open) {
-      void refresh(debouncedSearchTerm, pageNumber, pageSize);
+      void refresh(debouncedSearchTerm, pageNumber, pageSize, searchCriteria);
     }
-  }, [open, debouncedSearchTerm, pageNumber, pageSize, refresh]);
+  }, [open, debouncedSearchTerm, pageNumber, pageSize, searchCriteria, refresh]);
 
   const effectiveProducts = serverProducts.length > 0 || !propsProducts || propsProducts.length === 0
     ? serverProducts

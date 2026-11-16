@@ -43,7 +43,7 @@ public class OdooJson2PosAdapter : IOdooPosGateway
     // Catálogo (RF-01, RF-02, RN-03)
     // ------------------------------------------------------------------
 
-    private static List<object> BuildProductDomain(string query)
+    private static List<object> BuildProductDomain(string query, string? criteria = null)
     {
         var domain = new List<object>
         {
@@ -51,10 +51,38 @@ public class OdooJson2PosAdapter : IOdooPosGateway
             new object[] { "sale_ok", "=", true }
         };
 
-        if (!string.IsNullOrWhiteSpace(query))
+        if (string.IsNullOrWhiteSpace(query))
         {
-            var q = query.Trim();
-            var cleanNum = q.TrimStart('#').Replace("id:", "", StringComparison.OrdinalIgnoreCase).Replace("id", "", StringComparison.OrdinalIgnoreCase).Trim();
+            return domain;
+        }
+
+        var q = query.Trim();
+        var cleanNum = q.TrimStart('#').Replace("id:", "", StringComparison.OrdinalIgnoreCase).Replace("id", "", StringComparison.OrdinalIgnoreCase).Trim();
+        var crit = criteria?.Trim().ToUpperInvariant();
+
+        if (crit == "ID")
+        {
+            if (int.TryParse(cleanNum, out var pid))
+            {
+                domain.Add(new object[] { "id", "=", pid });
+            }
+            else
+            {
+                domain.Add(new object[] { "id", "=", -1 });
+            }
+        }
+        else if (crit == "NAME")
+        {
+            domain.Add(new object[] { "name", "ilike", q });
+        }
+        else if (crit == "CODE")
+        {
+            domain.Add("|");
+            domain.Add(new object[] { "default_code", "ilike", q });
+            domain.Add(new object[] { "barcode", "ilike", q });
+        }
+        else // "ALL" o nulo (búsqueda general)
+        {
             if (int.TryParse(cleanNum, out var parsedId))
             {
                 domain.Add("|");
@@ -74,6 +102,7 @@ public class OdooJson2PosAdapter : IOdooPosGateway
                 domain.Add(new object[] { "barcode", "ilike", q });
             }
         }
+
         return domain;
     }
 
@@ -87,9 +116,10 @@ public class OdooJson2PosAdapter : IOdooPosGateway
         string query,
         int page = 1,
         int pageSize = 8,
+        string? criteria = null,
         CancellationToken cancellationToken = default)
     {
-        var domain = BuildProductDomain(query);
+        var domain = BuildProductDomain(query, criteria);
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
         var offset = (page - 1) * pageSize;
@@ -103,7 +133,7 @@ public class OdooJson2PosAdapter : IOdooPosGateway
         return (items, totalCount);
     }
 
-    private static List<object> BuildCustomerDomain(string query)
+    private static List<object> BuildCustomerDomain(string query, string? criteria = null)
     {
         // [FILTRADO ESTRICTO DE CLIENTES EXTERNOS EN ODOO]:
         // 1. user_ids = false: Excluye usuarios del sistema (Administrator, cajeros, operadores, empleados).
@@ -119,10 +149,36 @@ public class OdooJson2PosAdapter : IOdooPosGateway
             new object[] { "name", "not ilike", "Consumidor Final" }
         };
 
-        if (!string.IsNullOrWhiteSpace(query))
+        if (string.IsNullOrWhiteSpace(query))
         {
-            var q = query.Trim();
-            var cleanNum = q.TrimStart('#').Replace("id:", "", StringComparison.OrdinalIgnoreCase).Replace("id", "", StringComparison.OrdinalIgnoreCase).Trim();
+            return domain;
+        }
+
+        var q = query.Trim();
+        var cleanNum = q.TrimStart('#').Replace("id:", "", StringComparison.OrdinalIgnoreCase).Replace("id", "", StringComparison.OrdinalIgnoreCase).Trim();
+        var crit = criteria?.Trim().ToUpperInvariant();
+
+        if (crit == "ID")
+        {
+            if (int.TryParse(cleanNum, out var cid))
+            {
+                domain.Add(new object[] { "id", "=", cid });
+            }
+            else
+            {
+                domain.Add(new object[] { "id", "=", -1 });
+            }
+        }
+        else if (crit == "NAME")
+        {
+            domain.Add(new object[] { "name", "ilike", q });
+        }
+        else if (crit == "VAT")
+        {
+            domain.Add(new object[] { "vat", "ilike", q });
+        }
+        else // "ALL" o nulo (búsqueda general)
+        {
             if (int.TryParse(cleanNum, out var parsedId))
             {
                 domain.Add("|");
@@ -142,6 +198,7 @@ public class OdooJson2PosAdapter : IOdooPosGateway
                 domain.Add(new object[] { "email", "ilike", q });
             }
         }
+
         return domain;
     }
 
@@ -173,7 +230,7 @@ public class OdooJson2PosAdapter : IOdooPosGateway
 
     public async Task<IReadOnlyList<CustomerDto>> SearchCustomersAsync(string query, CancellationToken cancellationToken = default)
     {
-        var (items, _) = await SearchCustomersPagedAsync(query, page: 1, pageSize: 50, cancellationToken);
+        var (items, _) = await SearchCustomersPagedAsync(query, page: 1, pageSize: 50, criteria: null, cancellationToken: cancellationToken);
         return items;
     }
 
@@ -181,9 +238,10 @@ public class OdooJson2PosAdapter : IOdooPosGateway
         string query,
         int page = 1,
         int pageSize = 8,
+        string? criteria = null,
         CancellationToken cancellationToken = default)
     {
-        var domain = BuildCustomerDomain(query);
+        var domain = BuildCustomerDomain(query, criteria);
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
         var offset = (page - 1) * pageSize;
