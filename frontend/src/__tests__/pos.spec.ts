@@ -1062,4 +1062,91 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
       global.fetch = originalFetch;
     }
   });
+
+  // =========================================================================
+  // P42: PosApiHttpAdapter incluye filter 'SESSION' en query params para el historial
+  // =========================================================================
+  it('P42: PosApiHttpAdapter incluye filter SESSION en query params para el historial', async () => {
+    const adapter = new PosApiHttpAdapter('http://localhost:5000');
+    const originalFetch = global.fetch;
+
+    try {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'x-total-count': '1' }),
+        json: async () => [
+          {
+            orderId: 'sale-1',
+            posSessionId: 4,
+            sessionName: 'Caja Principal/00004',
+            customerDocument: '1712345678',
+            customerName: 'Cliente Test',
+            subTotal: 10,
+            discountAmount: 0,
+            taxAmount: 1.5,
+            totalAmount: 11.5,
+            state: 'Synced',
+            lines: [],
+            createdAtUtc: new Date().toISOString(),
+          },
+        ],
+      });
+      global.fetch = mockFetch;
+
+      await adapter.getSalesHistory(1, 5, '4', 'SESSION');
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('filter=SESSION'),
+        expect.anything()
+      );
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('search=4'),
+        expect.anything()
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  // =========================================================================
+  // P43: Filtrado de historial por Caja / Sesión (SESSION por ID o nombre de sesión)
+  // =========================================================================
+  it('P43: Filtrado de historial por criterio SESSION soporta coincidencia por sessionId o sessionName', () => {
+    const salesMock: Partial<SaleOrderDetailDto>[] = [
+      {
+        orderId: 'sale-001',
+        posSessionId: 4,
+        sessionName: 'Caja Principal/00004',
+        customerName: 'Juan Perez',
+      },
+      {
+        orderId: 'sale-002',
+        posSessionId: 5,
+        sessionName: 'Shop Furniture/00005',
+        customerName: 'Carlos Gomez',
+      },
+    ];
+
+    const filterBySession = (query: string) => {
+      const term = query.trim().toLowerCase();
+      if (!term) return salesMock;
+      const parsedId = parseInt(term, 10);
+      return salesMock.filter((s) => {
+        const matchId = !isNaN(parsedId) && s.posSessionId === parsedId;
+        const matchName = (s.sessionName ?? '').toLowerCase().includes(term);
+        return matchId || matchName;
+      });
+    };
+
+    // Búsqueda por ID numérico 4
+    expect(filterBySession('4')).toHaveLength(1);
+    expect(filterBySession('4')[0].posSessionId).toBe(4);
+
+    // Búsqueda por nombre de sesión 'Furniture'
+    expect(filterBySession('Furniture')).toHaveLength(1);
+    expect(filterBySession('Furniture')[0].posSessionId).toBe(5);
+
+    // Búsqueda sin coincidencias
+    expect(filterBySession('Inexistente')).toHaveLength(0);
+  });
 });

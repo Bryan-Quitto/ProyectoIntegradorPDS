@@ -27,7 +27,7 @@ import {
   LogOut,
 } from 'lucide-react';
 
-export type SaleHistoryFilterType = 'ALL' | 'REFERENCE' | 'CUSTOMER';
+export type SaleHistoryFilterType = 'ALL' | 'REFERENCE' | 'CUSTOMER' | 'SESSION';
 
 interface SalesHistoryPageProps {
   onBackToTerminal?: () => void;
@@ -64,7 +64,9 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
   const querySearch = searchParams.get('buscar') || searchParams.get('q') || '';
   const rawFilter = (searchParams.get('filtro') || searchParams.get('filter') || 'ALL').toUpperCase();
   const queryFilter: SaleHistoryFilterType =
-    rawFilter === 'REFERENCE' || rawFilter === 'CUSTOMER' ? rawFilter : 'ALL';
+    rawFilter === 'REFERENCE' || rawFilter === 'CUSTOMER' || (isAdmin && rawFilter === 'SESSION')
+      ? rawFilter
+      : 'ALL';
   const queryPage = Math.max(1, parseInt(searchParams.get('pagina') || searchParams.get('page') || '1', 10) || 1);
   const queryDetail = searchParams.get('detalle') || searchParams.get('orden');
 
@@ -166,6 +168,8 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
         return 'Buscar por referencia Odoo o ID local (ej. 260-1, 000003, ID Odoo)...';
       case 'CUSTOMER':
         return 'Buscar por cliente o identificación (ej. Juan, Pérez, 1712...)...';
+      case 'SESSION':
+        return 'Buscar por caja o sesión (ej. Caja #4, Shop/0001, 4)...';
       case 'ALL':
       default:
         return 'Buscar por referencia Odoo, cliente, cédula o ID local...';
@@ -267,6 +271,7 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
                   <option value="ALL">🔍 Todos los criterios</option>
                   <option value="REFERENCE">🧾 Referencia / ID Odoo</option>
                   <option value="CUSTOMER">👤 Cliente / Identificación</option>
+                  {isAdmin && <option value="SESSION">🏪 Caja / Sesión</option>}
                 </select>
 
                 <div className="relative flex-1">
@@ -327,6 +332,8 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
                     ? 'Búsqueda por Cliente / Identificación'
                     : filterType === 'REFERENCE'
                     ? 'Búsqueda por Referencia / ID Odoo'
+                    : filterType === 'SESSION'
+                    ? 'Búsqueda por Caja / Sesión'
                     : 'Búsqueda global (Referencia, Cliente, Cédula)'}
                 </span>
               </div>
@@ -359,6 +366,8 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
                         ? `Ninguna orden coincide con la referencia "${searchTerm}".`
                         : filterType === 'CUSTOMER'
                         ? `Ningún cliente coincide con "${searchTerm}".`
+                        : filterType === 'SESSION'
+                        ? `Ninguna caja o sesión coincide con "${searchTerm}".`
                         : `Ningún registro coincide con "${searchTerm}".`}
                     </p>
                     <Button
@@ -391,6 +400,7 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
                 <TableHeader>
                   <TableRow className="bg-slate-50/50">
                     <TableHead className="w-24">ID Local</TableHead>
+                    {isAdmin && <TableHead>Caja / Sesión</TableHead>}
                     <TableHead>Referencia Odoo</TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead>Fecha Sincronización</TableHead>
@@ -415,6 +425,15 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
                             {sale.orderId.substring(0, 8)}...
                           </span>
                         </TableCell>
+
+                        {/* Columna Caja / Sesión para Administrador (Auditoría) */}
+                        {isAdmin && (
+                          <TableCell>
+                            <span className="font-mono text-xs font-medium text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded">
+                              {sale.sessionName || `Caja #${sale.posSessionId}`}
+                            </span>
+                          </TableCell>
+                        )}
 
                         {/* Referencia Oficial en Odoo 20 */}
                         <TableCell className="font-semibold text-slate-800">

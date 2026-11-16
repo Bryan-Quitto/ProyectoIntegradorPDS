@@ -1136,4 +1136,112 @@ public class PosTests
         total.Should().Be(1);
         items[0].Id.Should().Be(15);
     }
+
+    // =========================================================================
+    // P30: GetSalesPagedAsync optimiza rendimiento sin deserializar líneas (Lazy Loading)
+    // mientras GetSaleByIdAsync deserializa las líneas completas bajo demanda
+    // =========================================================================
+    [Fact]
+    public async Task P30_SqliteSaleHistoryRepository_GetSalesPagedAsync_LazyLoadsLines_EmptyInSummary_LoadedInDetail()
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<Pos.Infrastructure.Persistence.PosDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using var dbContext = new Pos.Infrastructure.Persistence.PosDbContext(options);
+        await dbContext.Database.EnsureCreatedAsync();
+
+        var repo = new Pos.Infrastructure.Persistence.SqliteSaleHistoryRepository(dbContext);
+
+        var orderId = Guid.NewGuid();
+        var lines = new List<SaleOrderLineDto>
+        {
+            new(1, "Producto Test", 2, 10m, 20m, "P-001", 0.15m, 17.39m, 2.61m, 20m)
+        };
+        var sale = new SaleOrderResponseDto(
+            orderId,
+            4,
+            "1712345678",
+            "Cliente Test",
+            17.39m,
+            0m,
+            2.61m,
+            20m,
+            "Synced",
+            "260-1-000001",
+            1,
+            DateTime.UtcNow,
+            lines,
+            SessionName: "Caja Principal"
+        );
+
+        await repo.SaveSaleAsync(sale);
+
+        // Act 1: GetSalesPagedAsync (listado de órdenes)
+        var (items, totalCount) = await repo.GetSalesPagedAsync(null, 1, 10);
+
+        // Assert 1: Lines debe estar vacío para evitar deserialización pesada y consumo innecesario de ancho de banda
+        items.Should().HaveCount(1);
+        totalCount.Should().Be(1);
+        items[0].Lines.Should().BeEmpty();
+
+        // Act 2: GetSaleByIdAsync (detalle bajo demanda)
+        var detail = await repo.GetSaleByIdAsync(orderId);
+
+        // Assert 2: Detail debe contener las líneas completas
+        detail.Should().NotBeNull();
+        detail!.Lines.Should().HaveCount(1);
+        detail.Lines[0].ProductName.Should().Be("Producto Test");
+    }
+
+    // =========================================================================
+    // P31: GetSalesPagedAsync filtra por SESSION (numérico o texto por coincidencia)
+    // =========================================================================
+    [Fact]
+    public async Task P31_SqliteSaleHistoryRepository_GetSalesPagedAsync_FiltersBySession()
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<Pos.Infrastructure.Persistence.PosDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using var dbContext = new Pos.Infrastructure.Persistence.PosDbContext(options);
+        await dbContext.Database.EnsureCreatedAsync();
+
+        var repo = new Pos.Infrastructure.Persistence.SqliteSaleHistoryRepository(dbContext);
+
+        var saleSession4 = new SaleOrderResponseDto(
+            Guid.NewGuid(), 4, "1712345678", "Cliente A", 10m, 0m, 1.5m, 11.5m, "Synced", "260-1-000001", 1,
+            DateTime.UtcNow, new List<SaleOrderLineDto>(), SessionName: "Caja Principal"
+        );
+        var saleSession5 = new SaleOrderResponseDto(
+            Guid.NewGuid(), 5, "1712345679", "Cliente B", 20m, 0m, 3.0m, 23.0m, "Synced", "260-2-000002", 2,
+            DateTime.UtcNow, new List<SaleOrderLineDto>(), SessionName: "Furniture Shop"
+        );
+
+        await repo.SaveSaleAsync(saleSession4);
+        await repo.SaveSaleAsync(saleSession5);
+
+        // Act 1: Buscar por ID de sesión numérico "4"
+        var (byNumericId, countNumeric) = await repo.GetSalesPagedAsync(null, 1, 10, search: "4", filter: "SESSION");
+        byNumericId.Should().HaveCount(1);
+        byNumericId[0].PosSessionId.Should().Be(4);
+        countNumeric.Should().Be(1);
+
+        // Act 2: Buscar por nombre de sesión "Furniture"
+        var (byName, countName) = await repo.GetSalesPagedAsync(null, 1, 10, search: "Furniture", filter: "SESSION");
+        byName.Should().HaveCount(1);
+        byName[0].PosSessionId.Should().Be(5);
+        countName.Should().Be(1);
+
+        // Act 3: Buscar sesión inexistente
+        var (byNone, countNone) = await repo.GetSalesPagedAsync(null, 1, 10, search: "NonExistent", filter: "SESSION");
+        byNone.Should().BeEmpty();
+        countNone.Should().Be(0);
+    }
 }

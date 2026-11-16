@@ -120,7 +120,7 @@ public class SqliteSaleHistoryRepository : ISaleHistoryRepository
             .Take(100)
             .ToListAsync(cancellationToken);
 
-        return records.Select(MapToDto).ToList();
+        return records.Select(r => MapToDto(r, includeLines: true)).ToList();
     }
 
     public async Task<IReadOnlyList<SaleOrderResponseDto>> GetAllSalesAsync(CancellationToken cancellationToken = default)
@@ -156,6 +156,17 @@ public class SqliteSaleHistoryRepository : ISaleHistoryRepository
                 query = query.Where(s => EF.Functions.Like(s.CustomerName, $"%{term}%") ||
                                          EF.Functions.Like(s.CustomerDocument, $"{term}%"));
             }
+            else if (cleanFilter == "SESSION")
+            {
+                if (int.TryParse(term, out var parsedSessionId))
+                {
+                    query = query.Where(s => s.PosSessionId == parsedSessionId || (s.SessionName != null && EF.Functions.Like(s.SessionName, $"%{term}%")));
+                }
+                else
+                {
+                    query = query.Where(s => s.SessionName != null && EF.Functions.Like(s.SessionName, $"%{term}%"));
+                }
+            }
             else
             {
                 query = query.Where(s => (s.OdooOrderReference != null && EF.Functions.Like(s.OdooOrderReference, $"%{term}%")) ||
@@ -176,7 +187,7 @@ public class SqliteSaleHistoryRepository : ISaleHistoryRepository
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        var items = records.Select(MapToDto).ToList();
+        var items = records.Select(r => MapToDto(r, includeLines: false)).ToList();
         return (items, totalCount);
     }
 
@@ -186,35 +197,43 @@ public class SqliteSaleHistoryRepository : ISaleHistoryRepository
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.OrderId == id, cancellationToken);
 
-        return record != null ? MapToDto(record) : null;
+        return record != null ? MapToDto(record, includeLines: true) : null;
     }
 
-    private static SaleOrderResponseDto MapToDto(SaleAuditRecord record)
+    private static SaleOrderResponseDto MapToDto(SaleAuditRecord record, bool includeLines = true)
     {
-        List<SaleOrderLineDto> rawLines;
-        try
+        List<SaleOrderLineDto> lines;
+        if (!includeLines)
         {
-            rawLines = JsonSerializer.Deserialize<List<SaleOrderLineDto>>(record.OrderLinesJson) ?? new();
+            lines = new List<SaleOrderLineDto>();
         }
-        catch
+        else
         {
-            rawLines = new();
-        }
-
-        var lines = rawLines.Select(l =>
-        {
-            var taxRate = l.TaxRate > 0 ? l.TaxRate : 0.15m;
-            var netSubTotal = l.NetSubTotal > 0 ? l.NetSubTotal : (l.SubTotal > 0 ? decimal.Round(l.SubTotal / (1m + taxRate), 2, MidpointRounding.AwayFromZero) : 0m);
-            var taxAmount = l.TaxAmount > 0 ? l.TaxAmount : (l.SubTotal - netSubTotal);
-            var totalWithTax = l.TotalWithTax > 0 ? l.TotalWithTax : l.SubTotal;
-            return l with
+            List<SaleOrderLineDto> rawLines;
+            try
             {
-                TaxRate = taxRate,
-                NetSubTotal = netSubTotal,
-                TaxAmount = taxAmount,
-                TotalWithTax = totalWithTax
-            };
-        }).ToList();
+                rawLines = JsonSerializer.Deserialize<List<SaleOrderLineDto>>(record.OrderLinesJson) ?? new();
+            }
+            catch
+            {
+                rawLines = new();
+            }
+
+            lines = rawLines.Select(l =>
+            {
+                var taxRate = l.TaxRate > 0 ? l.TaxRate : 0.15m;
+                var netSubTotal = l.NetSubTotal > 0 ? l.NetSubTotal : (l.SubTotal > 0 ? decimal.Round(l.SubTotal / (1m + taxRate), 2, MidpointRounding.AwayFromZero) : 0m);
+                var taxAmount = l.TaxAmount > 0 ? l.TaxAmount : (l.SubTotal - netSubTotal);
+                var totalWithTax = l.TotalWithTax > 0 ? l.TotalWithTax : l.SubTotal;
+                return l with
+                {
+                    TaxRate = taxRate,
+                    NetSubTotal = netSubTotal,
+                    TaxAmount = taxAmount,
+                    TotalWithTax = totalWithTax
+                };
+            }).ToList();
+        }
 
         return new SaleOrderResponseDto(
             record.OrderId,
