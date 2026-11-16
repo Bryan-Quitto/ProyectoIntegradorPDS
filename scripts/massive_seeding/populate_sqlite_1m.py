@@ -114,7 +114,7 @@ def main():
             
             pay_method = payment_methods[i % 3]
             dt_str = (base_date - timedelta(days=i % 365, seconds=i % 86400)).strftime("%Y-%m-%d %H:%M:%S")
-            lines_json = f'[{{"ProductId":{i},"ProductName":"Producto POS {i:07d}","Quantity":1.0,"UnitPrice":{total_val},"SubTotal":{total_val}}}]'
+            lines_json = f'[{{"ProductId":{i},"ProductName":"Producto POS {i:07d}","Quantity":1,"UnitPrice":{total_val},"SubTotal":{total_val}}}]'
             
             chunk.append((
                 order_guid,

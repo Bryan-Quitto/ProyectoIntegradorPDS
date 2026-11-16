@@ -139,7 +139,15 @@ public class SqliteSaleHistoryRepository : ISaleHistoryRepository
 
     private static SaleOrderResponseDto MapToDto(SaleAuditRecord record)
     {
-        var rawLines = JsonSerializer.Deserialize<List<SaleOrderLineDto>>(record.OrderLinesJson) ?? new();
+        List<SaleOrderLineDto> rawLines;
+        try
+        {
+            rawLines = JsonSerializer.Deserialize<List<SaleOrderLineDto>>(record.OrderLinesJson) ?? new();
+        }
+        catch
+        {
+            rawLines = new();
+        }
 
         var lines = rawLines.Select(l =>
         {
