@@ -69,12 +69,8 @@ export const ProductSelectorModal: React.FC<ProductSelectorModalProps> = ({
     }
   }, [open, debouncedSearchTerm, pageNumber, pageSize, searchCriteria, onlyInStock, refresh]);
 
-  const effectiveProducts = serverProducts.length > 0 || !propsProducts || propsProducts.length === 0
-    ? serverProducts
-    : propsProducts;
-  const totalCount = serverTotalCount > 0
-    ? serverTotalCount
-    : (effectiveProducts as any)?.totalCount ?? effectiveProducts.length;
+  const effectiveProducts = serverProducts;
+  const totalCount = serverTotalCount;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const pagedProducts = effectiveProducts;
   const isEffectiveLoading = loading || serverLoading;

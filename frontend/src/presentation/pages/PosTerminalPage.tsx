@@ -320,8 +320,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
 
   // Condición de guardia para habilitar el cobro POS (Pre-flight antes de abrir el modal)
   const canProceedToPayment =
-    hasAssignedSession &&
-    Boolean(activeSession) &&
+    (hasAssignedSession || Boolean(activeSession)) &&
     items.length > 0 &&
     stockValidationErrors.length === 0 &&
     !customerValidationError;
@@ -372,17 +371,21 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
     paymentMethod: string,
     partnerId?: number | null
   ) => {
-    if (!activeSession) {
+    const effectiveSessionId = user?.posSessionId && user.posSessionId > 0
+      ? user.posSessionId
+      : activeSession?.id;
+
+    if (!effectiveSessionId) {
       return {
         success: false,
-        errorMessage: 'No existe sesión de POS activa en Odoo.',
+        errorMessage: 'No existe sesión de POS asignada o activa en Odoo.',
       };
     }
 
     const effectivePartnerId = partnerId !== undefined ? partnerId : selectedCustomer?.id ?? null;
     const result = await checkout(
       rawCart,
-      activeSession.id,
+      effectiveSessionId,
       customerDoc,
       customerName,
       paymentMethod,
@@ -499,7 +502,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
 
       // 5. Verificación de sesión POS activa
       let sessionError: string | null = null;
-      if (!freshSession) {
+      if (!hasAssignedSession && !freshSession) {
         sessionError = 'No se encontró una sesión de caja POS abierta en Odoo ERP.';
       }
 
@@ -1347,7 +1350,6 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
           setProductModalOpen(open);
           if (!open) setReplacingItem(null);
         }}
-        products={products}
         selectedProductIds={items.map((i) => i.productId)}
         onSelectProduct={handleSelectOrReplaceProduct}
         loading={loading}
