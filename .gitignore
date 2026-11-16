@@ -35,6 +35,11 @@ yarn-error.log*
 pnpm-debug.log*
 .pnpm-debug.log*
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
 # Editor & OS
 .DS_Store
 Thumbs.db

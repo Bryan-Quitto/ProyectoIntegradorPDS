@@ -117,6 +117,7 @@ public class SqliteSaleHistoryRepository : ISaleHistoryRepository
 
         var records = await query
             .OrderByDescending(s => s.SyncedAtUtc)
+            .Take(100)
             .ToListAsync(cancellationToken);
 
         return records.Select(MapToDto).ToList();
