@@ -209,10 +209,15 @@ export class PosApiHttpAdapter implements IPosApiGateway {
       },
     });
 
-    const totalCountHeader = response.headers.get('x-total-count');
+    const totalCountHeader = response.headers.get('x-total-count') || response.headers.get('X-Total-Count');
     const items = await this.handleResponse<SaleOrderResult[]>(response);
-    if (totalCountHeader && Array.isArray(items)) {
-      (items as any).totalCount = parseInt(totalCountHeader, 10);
+    if (Array.isArray(items)) {
+      if (totalCountHeader) {
+        const parsed = parseInt(totalCountHeader, 10);
+        if (!isNaN(parsed)) {
+          (items as any).totalCount = parsed;
+        }
+      }
     }
     return items;
   }
