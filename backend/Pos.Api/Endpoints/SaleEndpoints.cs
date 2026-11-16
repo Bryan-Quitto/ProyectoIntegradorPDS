@@ -81,10 +81,14 @@ public static class SaleEndpoints
             return Results.Created($"/api/sales/{result.OrderId}", result);
         }).RequireAuthorization();
 
-        // Historial Local de Ventas con Aislamiento por Caja y Rol (Least Privilege & Multi-cashier Data Isolation)
+        // Historial Local de Ventas con Aislamiento por Caja y Rol y Paginación Server-Side Masiva
         app.MapGet("/api/sales", async (
             HttpContext httpContext,
             GetSalesHistoryUseCase useCase,
+            int? page,
+            int? pageSize,
+            string? search,
+            string? filter,
             CancellationToken ct) =>
         {
             if (httpContext.User.Identity?.IsAuthenticated != true)
@@ -97,22 +101,29 @@ public static class SaleEndpoints
                               (c.Type == ClaimTypes.Role || c.Type == "role" || c.Type == "http://schemas.microsoft.com/ws/2008/06/identity/claims/role")
                               && string.Equals(c.Value, "Administrator", StringComparison.OrdinalIgnoreCase));
 
-            if (isAdmin)
+            int? targetSessionId = null;
+            if (!isAdmin)
             {
-                var allSales = await useCase.ExecuteAsync(null, ct);
-                return Results.Ok(allSales);
+                var sessionClaim = httpContext.User.FindFirst("pos_session_id")?.Value;
+                if (string.IsNullOrWhiteSpace(sessionClaim) || !int.TryParse(sessionClaim, out var authorizedSessionId) || authorizedSessionId <= 0)
+                {
+                    httpContext.Response.Headers["X-Total-Count"] = "0";
+                    return Results.Ok(Array.Empty<SaleOrderResponseDto>());
+                }
+                targetSessionId = authorizedSessionId;
             }
 
-            // Cajero / Vendedor: aislar por caja asignada en token
-            var sessionClaim = httpContext.User.FindFirst("pos_session_id")?.Value;
-            if (string.IsNullOrWhiteSpace(sessionClaim) || !int.TryParse(sessionClaim, out var authorizedSessionId) || authorizedSessionId <= 0)
-            {
-                // Sin caja asignada (modo consulta / cajero sin sesión): lista vacía
-                return Results.Ok(Array.Empty<SaleOrderResponseDto>());
-            }
+            var (items, totalCount) = await useCase.ExecutePagedAsync(
+                targetSessionId,
+                page ?? 1,
+                pageSize ?? 5,
+                search,
+                filter,
+                ct);
 
-            var sales = await useCase.ExecuteAsync(authorizedSessionId, ct);
-            return Results.Ok(sales);
+            httpContext.Response.Headers["X-Total-Count"] = totalCount.ToString();
+            httpContext.Response.Headers.AccessControlExposeHeaders = "X-Total-Count";
+            return Results.Ok(items);
         }).RequireAuthorization();
 
         // Consulta de Venta por ID (RF-14) con Aislamiento por Caja y Rol

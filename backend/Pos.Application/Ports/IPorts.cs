@@ -49,5 +49,12 @@ public interface ISaleHistoryRepository
     Task SaveSaleAsync(SaleOrderResponseDto sale, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<SaleOrderResponseDto>> GetAllSalesAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<SaleOrderResponseDto>> GetSalesAsync(int? posSessionId = null, CancellationToken cancellationToken = default);
+    Task<(IReadOnlyList<SaleOrderResponseDto> Items, int TotalCount)> GetSalesPagedAsync(
+        int? posSessionId = null,
+        int page = 1,
+        int pageSize = 5,
+        string? search = null,
+        string? filter = null,
+        CancellationToken cancellationToken = default);
     Task<SaleOrderResponseDto?> GetSaleByIdAsync(Guid id, CancellationToken cancellationToken = default);
 }

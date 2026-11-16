@@ -102,6 +102,6 @@ export interface IPosApiGateway {
   getCustomers(search?: string): Promise<Customer[]>;
   getActiveSession(): Promise<PosSession | null>;
   createSale(request: CreateSaleRequest): Promise<SaleOrderResult>;
-  getSalesHistory(): Promise<SaleOrderResult[]>;
+  getSalesHistory(page?: number, pageSize?: number, search?: string, filter?: string): Promise<SaleOrderResult[]>;
   getSaleById(id: string): Promise<SaleOrderDetailDto | null>;
 }

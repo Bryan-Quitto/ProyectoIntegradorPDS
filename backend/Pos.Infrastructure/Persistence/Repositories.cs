@@ -128,6 +128,58 @@ public class SqliteSaleHistoryRepository : ISaleHistoryRepository
         return await GetSalesAsync(null, cancellationToken);
     }
 
+    public async Task<(IReadOnlyList<SaleOrderResponseDto> Items, int TotalCount)> GetSalesPagedAsync(
+        int? posSessionId = null,
+        int page = 1,
+        int pageSize = 5,
+        string? search = null,
+        string? filter = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = _dbContext.SaleAuditRecords.AsNoTracking();
+        if (posSessionId.HasValue)
+        {
+            query = query.Where(s => s.PosSessionId == posSessionId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            var cleanFilter = filter?.ToUpperInvariant();
+            if (cleanFilter == "REFERENCE")
+            {
+                query = query.Where(s => (s.OdooOrderReference != null && EF.Functions.Like(s.OdooOrderReference, $"%{term}%")) ||
+                                         EF.Functions.Like(s.OrderId.ToString(), $"{term}%"));
+            }
+            else if (cleanFilter == "CUSTOMER")
+            {
+                query = query.Where(s => EF.Functions.Like(s.CustomerName, $"%{term}%") ||
+                                         EF.Functions.Like(s.CustomerDocument, $"{term}%"));
+            }
+            else
+            {
+                query = query.Where(s => (s.OdooOrderReference != null && EF.Functions.Like(s.OdooOrderReference, $"%{term}%")) ||
+                                         EF.Functions.Like(s.CustomerName, $"%{term}%") ||
+                                         EF.Functions.Like(s.CustomerDocument, $"{term}%") ||
+                                         EF.Functions.Like(s.OrderId.ToString(), $"{term}%"));
+            }
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var records = await query
+            .OrderByDescending(s => s.SyncedAtUtc)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        var items = records.Select(MapToDto).ToList();
+        return (items, totalCount);
+    }
+
     public async Task<SaleOrderResponseDto?> GetSaleByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var record = await _dbContext.SaleAuditRecords

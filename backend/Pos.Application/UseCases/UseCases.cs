@@ -288,6 +288,17 @@ public class GetSalesHistoryUseCase
     {
         return await _historyRepository.GetSalesAsync(posSessionId, cancellationToken);
     }
+
+    public async Task<(IReadOnlyList<SaleOrderResponseDto> Items, int TotalCount)> ExecutePagedAsync(
+        int? posSessionId,
+        int page = 1,
+        int pageSize = 5,
+        string? search = null,
+        string? filter = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await _historyRepository.GetSalesPagedAsync(posSessionId, page, pageSize, search, filter, cancellationToken);
+    }
 }
 
 public class GetSaleByIdUseCase

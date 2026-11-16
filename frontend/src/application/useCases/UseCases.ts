@@ -111,8 +111,8 @@ export class GetSalesHistoryUseCase {
     this._gateway = gateway;
   }
 
-  public async execute(): Promise<SaleOrderResult[]> {
-    return await this._gateway.getSalesHistory();
+  public async execute(page?: number, pageSize?: number, search?: string, filter?: string): Promise<SaleOrderResult[]> {
+    return await this._gateway.getSalesHistory(page, pageSize, search, filter);
   }
 }
 

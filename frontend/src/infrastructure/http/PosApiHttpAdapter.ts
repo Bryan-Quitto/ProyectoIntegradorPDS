@@ -188,8 +188,20 @@ export class PosApiHttpAdapter implements IPosApiGateway {
     return await this.handleResponse<SaleOrderResult>(response);
   }
 
-  public async getSalesHistory(): Promise<SaleOrderResult[]> {
-    const response = await this.safeFetch(`${this._baseUrl}/api/sales`, {
+  public async getSalesHistory(
+    page = 1,
+    pageSize = 5,
+    search?: string,
+    filter?: string
+  ): Promise<SaleOrderResult[]> {
+    const params = new URLSearchParams();
+    if (page) params.append('page', String(page));
+    if (pageSize) params.append('pageSize', String(pageSize));
+    if (search && search.trim()) params.append('search', search.trim());
+    if (filter && filter !== 'ALL') params.append('filter', filter);
+
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    const response = await this.safeFetch(`${this._baseUrl}/api/sales${queryString}`, {
       method: 'GET',
       headers: {
         Accept: 'application/json',
@@ -197,7 +209,12 @@ export class PosApiHttpAdapter implements IPosApiGateway {
       },
     });
 
-    return await this.handleResponse<SaleOrderResult[]>(response);
+    const totalCountHeader = response.headers.get('x-total-count');
+    const items = await this.handleResponse<SaleOrderResult[]>(response);
+    if (totalCountHeader && Array.isArray(items)) {
+      (items as any).totalCount = parseInt(totalCountHeader, 10);
+    }
+    return items;
   }
 
   public async getSaleById(id: string): Promise<SaleOrderDetailDto | null> {

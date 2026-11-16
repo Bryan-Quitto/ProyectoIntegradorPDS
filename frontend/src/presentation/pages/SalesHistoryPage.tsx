@@ -1,7 +1,8 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useSalesHistory } from '../hooks/useSalesHistory';
 import { useSaleDetail } from '../hooks/useSaleDetail';
+import { useDebounce } from '@/shared/utils/useDebounce';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -19,7 +20,6 @@ import {
   Eye,
   AlertCircle,
   Search,
-  Filter,
   X,
   Inbox,
   User,
@@ -52,16 +52,6 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
     }
   };
 
-  const { sales, loading, error, refresh } = useSalesHistory();
-  const {
-    sale: selectedSale,
-    loading: detailLoading,
-    error: detailError,
-    isOpen: isDetailOpen,
-    openSaleDetail,
-    closeSaleDetail,
-  } = useSaleDetail();
-
   // Aislamiento de Historial y Least Privilege
   const isAdmin =
     user?.role === 'Administrator' ||
@@ -82,6 +72,26 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
   const [filterType, setFilterType] = useState<SaleHistoryFilterType>(queryFilter);
   const [currentPage, setCurrentPage] = useState(queryPage);
   const PAGE_SIZE = 5; // 5 órdenes por página en el historial
+
+  // Búsqueda con debounce para alto rendimiento con 1M+ registros
+  const debouncedSearch = useDebounce(searchTerm, 350);
+
+  // Hook de historial conectado a paginación y búsqueda del servidor SQLite
+  const { sales, totalCount, loading, error, refresh } = useSalesHistory(
+    currentPage,
+    PAGE_SIZE,
+    debouncedSearch,
+    filterType
+  );
+
+  const {
+    sale: selectedSale,
+    loading: detailLoading,
+    error: detailError,
+    isOpen: isDetailOpen,
+    openSaleDetail,
+    closeSaleDetail,
+  } = useSaleDetail();
 
   // Apertura automática de detalle por parámetro de URL (Deep Linking para auditoría)
   useEffect(() => {
@@ -109,53 +119,19 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
   }, [searchTerm, filterType, currentPage, queryDetail, setSearchParams]);
 
   // Reset de página al cambiar término de búsqueda o tipo de filtro
+  const prevFilterRef = useRef({ search: debouncedSearch, filter: filterType });
   useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, filterType]);
+    if (
+      prevFilterRef.current.search !== debouncedSearch ||
+      prevFilterRef.current.filter !== filterType
+    ) {
+      prevFilterRef.current = { search: debouncedSearch, filter: filterType };
+      setCurrentPage(1);
+    }
+  }, [debouncedSearch, filterType]);
 
-  // Filtrado reactivo en memoria:
-  // - Referencia Odoo: 'contains' sobre odooOrderReference (ej: '260-1-000004', '0004', '4').
-  //   Para evitar falsos positivos con dígitos aleatorios de GUIDs hexadecimales,
-  //   el ID local solo se evalúa si el término tiene al menos 4 caracteres y con 'startsWith'.
-  // - Cliente Nombre: 'contains' (permite buscar por apellido ej. 'Perez').
-  // - Cédula / RUC: 'startsWith' (búsqueda natural por código de provincia '17...', '09...' o '999...').
-  const filteredSales = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
-    if (!term) return sales;
-
-    return sales.filter((sale) => {
-      const odooRef = (sale.odooOrderReference ?? '').toLowerCase();
-      const odooId = sale.odooOrderId ? String(sale.odooOrderId) : '';
-      const localId = (sale.orderId ?? '').toLowerCase();
-      const clientName = (sale.customerName ?? '').toLowerCase();
-      const clientDoc = (sale.customerDocument ?? '').trim();
-
-      // Criterio de Referencia:
-      // Busca en la Referencia oficial Odoo (ej. '260-1-000004' contiene '4' o '000004')
-      // o el ID Odoo exacto. Para el ID local GUID solo si el término tiene >= 4 caracteres y empieza con él.
-      const matchReference =
-        odooRef.includes(term) ||
-        odooId === term ||
-        (term.length >= 4 && localId.startsWith(term));
-
-      // Criterio de Cliente:
-      // - Nombre / Razón Social: contains
-      // - Cédula / RUC: startsWith
-      const matchCustomer =
-        clientName.includes(term) || clientDoc.startsWith(term);
-
-      if (filterType === 'REFERENCE') return matchReference;
-      if (filterType === 'CUSTOMER') return matchCustomer;
-      return matchReference || matchCustomer;
-    });
-  }, [sales, searchTerm, filterType]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredSales.length / PAGE_SIZE));
-
-  const pagedSales = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE;
-    return filteredSales.slice(start, start + PAGE_SIZE);
-  }, [filteredSales, currentPage, PAGE_SIZE]);
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const pagedSales = sales;
 
   // Localización estricta de estados de venta (Español Estricto)
   const getSaleStateBadge = (state: string) => {
@@ -209,7 +185,7 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Badge Vendedor y Caja Asignada (Fase 4) */}
+          {/* Badge Vendedor y Caja Asignada */}
           <div className="hidden md:flex items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs">
             <span className="text-slate-700 font-medium flex items-center gap-1">
               <User className="h-3.5 w-3.5 text-slate-500" />
@@ -271,18 +247,17 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
               </p>
             </div>
             <Badge variant="default">
-              {filteredSales.length === sales.length
-                ? `${sales.length} órdenes`
-                : `${filteredSales.length} de ${sales.length} órdenes`}
+              {debouncedSearch
+                ? `${totalCount.toLocaleString()} órdenes encontradas`
+                : `${totalCount.toLocaleString()} órdenes`}
             </Badge>
           </CardHeader>
 
           {/* Barra de Búsqueda y Filtros de Órdenes */}
           <div className="p-4 bg-slate-50/70 border-b border-slate-200 space-y-2.5">
             <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
-              {/* Barra de Búsqueda con Combobox de Filtros (Punto 6) */}
+              {/* Barra de Búsqueda con Combobox de Filtros */}
               <div className="flex items-center gap-2 flex-1 max-w-2xl">
-                {/* Combobox Select Estilizado (Punto 6) */}
                 <select
                   value={filterType}
                   onChange={(e) => setFilterType(e.target.value as SaleHistoryFilterType)}
@@ -319,12 +294,19 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
               <div className="text-xs text-slate-500 hidden sm:block shrink-0">
                 {searchTerm ? (
                   <span>
-                    Coincidencias: <strong className="text-slate-800 font-mono font-semibold">{filteredSales.length}</strong> de{' '}
-                    <strong className="text-slate-800 font-mono font-semibold">{sales.length}</strong>
+                    Coincidencias:{' '}
+                    <strong className="text-slate-800 font-mono font-semibold">
+                      {totalCount.toLocaleString()}
+                    </strong>{' '}
+                    órdenes
                   </span>
                 ) : (
                   <span>
-                    Total: <strong className="text-slate-800 font-mono font-semibold">{sales.length}</strong> órdenes
+                    Total:{' '}
+                    <strong className="text-slate-800 font-mono font-semibold">
+                      {totalCount.toLocaleString()}
+                    </strong>{' '}
+                    órdenes
                   </span>
                 )}
               </div>
@@ -336,16 +318,16 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
                 <span>
                   Resultados encontrados:{' '}
                   <strong className="text-slate-800 font-mono font-semibold">
-                    {filteredSales.length}
+                    {totalCount.toLocaleString()}
                   </strong>{' '}
                   orden(es)
                 </span>
                 <span className="text-emerald-700 font-medium">
                   {filterType === 'CUSTOMER'
-                    ? 'Nombre (contiene) | Cédula/RUC (empieza con)'
+                    ? 'Búsqueda por Cliente / Identificación'
                     : filterType === 'REFERENCE'
-                    ? 'Referencia Odoo (contiene secuencia)'
-                    : 'Referencia/Nombre (contiene) | Cédula (empieza con)'}
+                    ? 'Búsqueda por Referencia / ID Odoo'
+                    : 'Búsqueda global (Referencia, Cliente, Cédula)'}
                 </span>
               </div>
             )}
@@ -369,7 +351,26 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
             ) : sales.length === 0 ? (
               <div className="p-12 text-center text-slate-400">
                 <Inbox className="h-10 w-10 mx-auto mb-2 text-slate-300 stroke-1" />
-                {isRestricted ? (
+                {searchTerm ? (
+                  <>
+                    <p className="font-medium text-slate-600">No se encontraron órdenes coincidentes.</p>
+                    <p className="text-xs mt-1 text-slate-400">
+                      {filterType === 'REFERENCE'
+                        ? `Ninguna orden coincide con la referencia "${searchTerm}".`
+                        : filterType === 'CUSTOMER'
+                        ? `Ningún cliente coincide con "${searchTerm}".`
+                        : `Ningún registro coincide con "${searchTerm}".`}
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSearchTerm('')}
+                      className="mt-3 text-xs"
+                    >
+                      Limpiar búsqueda
+                    </Button>
+                  </>
+                ) : isRestricted ? (
                   <>
                     <p className="font-semibold text-amber-800 text-sm">
                       ⚠️ Acceso Restringido: Su usuario no tiene una caja asignada.
@@ -384,26 +385,6 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
                     <p className="text-xs mt-1 text-slate-400">Regresa al terminal para procesar una nueva orden.</p>
                   </>
                 )}
-              </div>
-            ) : filteredSales.length === 0 ? (
-              <div className="p-12 text-center text-slate-400">
-                <Inbox className="h-10 w-10 mx-auto mb-2 text-slate-300 stroke-1" />
-                <p className="font-medium text-slate-600">No se encontraron órdenes coincidentes.</p>
-                <p className="text-xs mt-1 text-slate-400">
-                  {filterType === 'REFERENCE'
-                    ? `Ninguna orden coincide con la referencia "${searchTerm}".`
-                    : filterType === 'CUSTOMER'
-                    ? `Ningún cliente coincide con "${searchTerm}".`
-                    : `Ningún registro coincide con "${searchTerm}".`}
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSearchTerm('')}
-                  className="mt-3 text-xs"
-                >
-                  Limpiar búsqueda
-                </Button>
               </div>
             ) : (
               <Table>
@@ -495,11 +476,11 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
             )}
 
             {/* Controles de Paginación del Historial */}
-            {!loading && !error && filteredSales.length > 0 && (
+            {!loading && !error && totalCount > 0 && (
               <Pagination
                 currentPage={currentPage}
                 totalPages={totalPages}
-                totalCount={filteredSales.length}
+                totalCount={totalCount}
                 pageSize={PAGE_SIZE}
                 onPageChange={setCurrentPage}
                 className="border-t border-slate-200 bg-slate-50/50"
