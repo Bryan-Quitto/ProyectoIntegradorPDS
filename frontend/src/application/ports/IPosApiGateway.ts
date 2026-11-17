@@ -100,7 +100,7 @@ export interface IPosApiGateway {
   login?(request: LoginRequest): Promise<LoginResponse>;
   getProducts(search?: string, page?: number, pageSize?: number, criteria?: string, onlyInStock?: boolean, signal?: AbortSignal): Promise<Product[]>;
   getProductsByIds(ids: number[]): Promise<Product[]>;
-  getCustomers(search?: string, page?: number, pageSize?: number, criteria?: string): Promise<Customer[]>;
+  getCustomers(search?: string, page?: number, pageSize?: number, criteria?: string, signal?: AbortSignal): Promise<Customer[]>;
   getActiveSession(): Promise<PosSession | null>;
   createSale(request: CreateSaleRequest): Promise<SaleOrderResult>;
   getSalesHistory(page?: number, pageSize?: number, search?: string, filter?: string, signal?: AbortSignal): Promise<SaleOrderResult[]>;

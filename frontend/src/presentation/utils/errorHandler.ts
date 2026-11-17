@@ -11,6 +11,16 @@ export const USER_FRIENDLY_AUTH_ERROR =
   'Ocurrió un error de autenticación con el servidor Odoo. Por favor intente nuevamente o contacte al administrador.';
 
 /**
+ * Determina si una excepción corresponde a una cancelación explícita mediante AbortController.
+ */
+export function isAbortError(err: unknown): boolean {
+  return (
+    (err instanceof Error && err.name === 'AbortError') ||
+    (typeof DOMException !== 'undefined' && err instanceof DOMException && err.name === 'AbortError')
+  );
+}
+
+/**
  * Determina si un error corresponde a un fallo de red, servidor apagado o excepción técnica de fetch.
  */
 export function isNetworkOrFetchError(err: unknown): boolean {

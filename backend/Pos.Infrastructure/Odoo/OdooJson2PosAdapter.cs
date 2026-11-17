@@ -1,7 +1,10 @@
+using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Pos.Application.DTOs;
@@ -12,26 +15,129 @@ using Pos.Domain.Entities;
 namespace Pos.Infrastructure.Odoo;
 
 /// <summary>
+/// Caché en memoria thread-safe compartida (Singleton en DI) para evitar consultas repetitivas a Odoo 20
+/// en conteos paginados (TTL 30s), impuestos (TTL 5m) y partners excluidos del POS (TTL 5m).
+/// </summary>
+public sealed class OdooAdapterCache
+{
+    private static readonly TimeSpan CountCacheTtl = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan TaxCacheTtl = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan ExcludedPartnersCacheTtl = TimeSpan.FromMinutes(5);
+
+    private readonly ConcurrentDictionary<(string Type, string NormalizedQuery, string Criteria, bool OnlyInStock), (int TotalCount, DateTime ExpiresAtUtc)> _countCache = new();
+    private readonly ConcurrentDictionary<int, (decimal Rate, bool PriceInclude, bool IsPercent, DateTime ExpiresAtUtc)> _taxCache = new();
+
+    private IReadOnlyList<int>? _excludedPartnerIds;
+    private DateTime _excludedPartnerIdsExpiresAtUtc = DateTime.MinValue;
+
+    public SemaphoreSlim ExcludedPartnersLock { get; } = new(1, 1);
+
+    public bool TryGetCount(string type, string normalizedQuery, string criteria, bool onlyInStock, out int totalCount)
+    {
+        var key = (type, normalizedQuery, criteria, onlyInStock);
+        if (_countCache.TryGetValue(key, out var entry) && entry.ExpiresAtUtc > DateTime.UtcNow)
+        {
+            totalCount = entry.TotalCount;
+            return true;
+        }
+        totalCount = 0;
+        return false;
+    }
+
+    public void SetCount(string type, string normalizedQuery, string criteria, bool onlyInStock, int totalCount)
+    {
+        var now = DateTime.UtcNow;
+        if (_countCache.Count > 1000)
+        {
+            foreach (var kv in _countCache)
+            {
+                if (kv.Value.ExpiresAtUtc <= now)
+                {
+                    _countCache.TryRemove(kv.Key, out _);
+                }
+            }
+        }
+        _countCache[(type, normalizedQuery, criteria, onlyInStock)] = (totalCount, now.Add(CountCacheTtl));
+    }
+
+    public bool TryGetTax(int taxId, out (decimal Rate, bool PriceInclude, bool IsPercent) entry)
+    {
+        if (_taxCache.TryGetValue(taxId, out var cached) && cached.ExpiresAtUtc > DateTime.UtcNow)
+        {
+            entry = (cached.Rate, cached.PriceInclude, cached.IsPercent);
+            return true;
+        }
+        entry = default;
+        return false;
+    }
+
+    public void SetTax(int taxId, decimal rate, bool priceInclude, bool isPercent)
+    {
+        _taxCache[taxId] = (rate, priceInclude, isPercent, DateTime.UtcNow.Add(TaxCacheTtl));
+    }
+
+    public bool TryGetExcludedPartnerIds(out IReadOnlyList<int> ids)
+    {
+        var current = Volatile.Read(ref _excludedPartnerIds);
+        if (current is not null && DateTime.UtcNow < _excludedPartnerIdsExpiresAtUtc)
+        {
+            ids = current;
+            return true;
+        }
+        ids = Array.Empty<int>();
+        return false;
+    }
+
+    public void SetExcludedPartnerIds(IReadOnlyList<int> ids)
+    {
+        _excludedPartnerIdsExpiresAtUtc = DateTime.UtcNow.Add(ExcludedPartnersCacheTtl);
+        Volatile.Write(ref _excludedPartnerIds, ids);
+    }
+}
+
+/// <summary>
 /// Adapter (GoF Estructural): traduce el puerto <see cref="IOdooPosGateway"/> de la capa Application
 /// a la API JSON-2 de Odoo 20 (<c>POST /json/2/{model}/{method}</c> con autenticación Bearer por API Key).
 /// </summary>
 public class OdooJson2PosAdapter : IOdooPosGateway
 {
+    private const int MaxCountLimit = 10000;
+    private const int AllBranchProbeLimit = 5001;
+    private const int MaxIndexedUnionCardinality = 5000;
+
     private static readonly string[] ProductFields =
         { "id", "name", "default_code", "lst_price", "barcode", "qty_available", "taxes_id" };
+
+    private static readonly string[] CustomerFields =
+        { "id", "name", "vat", "email", "street", "phone" };
+
+    private static readonly Regex LeadingIdPrefixRegex =
+        new(@"^(?:#\s*|id\s*:\s*)+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly HttpClient _httpClient;
     private readonly OdooOptions _options;
     private readonly ILogger<OdooJson2PosAdapter> _logger;
+    private readonly OdooAdapterCache _cache;
 
     public OdooJson2PosAdapter(
         HttpClient httpClient,
         IOptions<OdooOptions> options,
         ILogger<OdooJson2PosAdapter> logger)
+        : this(httpClient, options, logger, new OdooAdapterCache())
+    {
+    }
+
+    [ActivatorUtilitiesConstructor]
+    public OdooJson2PosAdapter(
+        HttpClient httpClient,
+        IOptions<OdooOptions> options,
+        ILogger<OdooJson2PosAdapter> logger,
+        OdooAdapterCache cache)
     {
         _httpClient = httpClient;
         _options = options.Value;
         _logger = logger;
+        _cache = cache;
 
         if (!string.IsNullOrWhiteSpace(_options.BaseUrl))
         {
@@ -42,6 +148,15 @@ public class OdooJson2PosAdapter : IOdooPosGateway
     // ------------------------------------------------------------------
     // Catálogo (RF-01, RF-02, RN-03)
     // ------------------------------------------------------------------
+
+    private static string ExtractCleanNumericId(string query) =>
+        LeadingIdPrefixRegex.Replace(query.Trim(), string.Empty).Trim();
+
+    private static string EscapeOdooLike(string input) =>
+        input.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+
+    private static bool IsNumericPrefix(string input) =>
+        input.Length > 0 && input.All(char.IsDigit);
 
     private static List<object> BuildBaseProductDomain(bool onlyInStock = false)
     {
@@ -69,7 +184,7 @@ public class OdooJson2PosAdapter : IOdooPosGateway
         }
 
         var q = query.Trim();
-        var cleanNum = q.TrimStart('#').Replace("id:", "", StringComparison.OrdinalIgnoreCase).Replace("id", "", StringComparison.OrdinalIgnoreCase).Trim();
+        var cleanNum = ExtractCleanNumericId(q);
         var crit = criteria?.Trim().ToUpperInvariant();
 
         if (crit == "ID")
@@ -136,22 +251,72 @@ public class OdooJson2PosAdapter : IOdooPosGateway
         pageSize = Math.Clamp(pageSize, 1, 100);
         var offset = (page - 1) * pageSize;
 
+        var normalizedQuery = query?.Trim().ToUpperInvariant() ?? string.Empty;
         var crit = criteria?.Trim().ToUpperInvariant();
-        var isGeneralSearch = !string.IsNullOrWhiteSpace(query) && (string.IsNullOrEmpty(crit) || crit == "ALL");
+        var normalizedCrit = string.IsNullOrWhiteSpace(query) || string.IsNullOrEmpty(crit) ? "ALL" : crit;
+        var isGeneralSearch = !string.IsNullOrWhiteSpace(query) && normalizedCrit == "ALL";
 
         if (!isGeneralSearch)
         {
-            var domain = BuildProductDomain(query, criteria, onlyInStock);
-            var totalCount = await CountProductsAsync(domain, cancellationToken);
-            var items = await ReadProductsAsync(domain, limit: pageSize, offset: offset, ct: cancellationToken);
+            var domain = BuildProductDomain(query ?? string.Empty, criteria, onlyInStock);
+            int? countLimit = string.IsNullOrWhiteSpace(query) ? null : MaxCountLimit;
+            return await ReadPagedWithShortCircuitAndCacheAsync(
+                cacheType: "product",
+                normalizedQuery: normalizedQuery,
+                normalizedCriteria: normalizedCrit,
+                onlyInStock: onlyInStock,
+                page: page,
+                pageSize: pageSize,
+                readPageAsync: () => ReadProductsWithRawCountAsync(domain, limit: pageSize, offset: offset, ct: cancellationToken),
+                countAsync: () => CountModelAsync("product.product", domain, countLimit, cancellationToken));
+        }
+
+        return await SearchProductsAllIndexedAsync(query!.Trim(), normalizedQuery, pageSize, offset, onlyInStock, cancellationToken);
+    }
+
+    private async Task<(IReadOnlyList<T> Items, int TotalCount)> ReadPagedWithShortCircuitAndCacheAsync<T>(
+        string cacheType,
+        string normalizedQuery,
+        string normalizedCriteria,
+        bool onlyInStock,
+        int page,
+        int pageSize,
+        Func<Task<(IReadOnlyList<T> Items, int RawCount)>> readPageAsync,
+        Func<Task<int>> countAsync)
+    {
+        if (_cache.TryGetCount(cacheType, normalizedQuery, normalizedCriteria, onlyInStock, out var cachedTotal))
+        {
+            var (cachedItems, _) = await readPageAsync();
+            return (cachedItems, cachedTotal);
+        }
+
+        if (page == 1)
+        {
+            var (items, rawCount) = await readPageAsync();
+            if (rawCount < pageSize)
+            {
+                _cache.SetCount(cacheType, normalizedQuery, normalizedCriteria, onlyInStock, items.Count);
+                return (items, items.Count);
+            }
+
+            var totalCount = await countAsync();
+            _cache.SetCount(cacheType, normalizedQuery, normalizedCriteria, onlyInStock, totalCount);
             return (items, totalCount);
         }
 
-        return await SearchProductsAllIndexedAsync(query.Trim(), pageSize, offset, onlyInStock, cancellationToken);
+        var countTask = countAsync();
+        var readTask = readPageAsync();
+        await Task.WhenAll(countTask, readTask);
+
+        var total = countTask.Result;
+        var (pagedItems, _) = readTask.Result;
+        _cache.SetCount(cacheType, normalizedQuery, normalizedCriteria, onlyInStock, total);
+        return (pagedItems, total);
     }
 
     private async Task<(IReadOnlyList<ProductDto> Items, int TotalCount)> SearchProductsAllIndexedAsync(
         string q,
+        string normalizedQuery,
         int pageSize,
         int offset,
         bool onlyInStock,
@@ -169,18 +334,15 @@ public class OdooJson2PosAdapter : IOdooPosGateway
             new object[] { "barcode", "ilike", q }
         };
 
-        var cleanNum = q.TrimStart('#')
-            .Replace("id:", "", StringComparison.OrdinalIgnoreCase)
-            .Replace("id", "", StringComparison.OrdinalIgnoreCase)
-            .Trim();
+        var cleanNum = ExtractCleanNumericId(q);
         var hasParsedId = int.TryParse(cleanNum, out var parsedId);
         List<object>? idDomain = hasParsedId
             ? new List<object>(baseDomain) { new object[] { "id", "=", parsedId } }
             : null;
 
-        var nameCountTask = CountProductsAsync(nameDomain, ct);
-        var codeCountTask = CountProductsAsync(codeDomain, ct);
-        var idCountTask = idDomain is not null ? CountProductsAsync(idDomain, ct) : Task.FromResult(0);
+        var nameCountTask = CountModelAsync("product.product", nameDomain, AllBranchProbeLimit, ct);
+        var codeCountTask = CountModelAsync("product.product", codeDomain, AllBranchProbeLimit, ct);
+        var idCountTask = idDomain is not null ? CountModelAsync("product.product", idDomain, 1, ct) : Task.FromResult(0);
 
         await Task.WhenAll(nameCountTask, codeCountTask, idCountTask);
 
@@ -191,32 +353,35 @@ public class OdooJson2PosAdapter : IOdooPosGateway
 
         if (nameCount == 0 && codeCount == 0 && !idExists)
         {
+            _cache.SetCount("product", normalizedQuery, "ALL", onlyInStock, 0);
             return (Array.Empty<ProductDto>(), 0);
         }
 
-        // Si solo una rama tiene coincidencias, leemos directamente esa rama paginada para aprovechar índices GIN/PK.
-        if (nameCount > 0 && codeCount == 0 && !idExists)
+        if (nameCount <= MaxIndexedUnionCardinality && codeCount <= MaxIndexedUnionCardinality)
         {
-            var items = await ReadProductsAsync(nameDomain, limit: pageSize, offset: offset, ct: ct);
-            return (items, nameCount);
-        }
+            // Si solo una rama tiene coincidencias, leemos directamente esa rama paginada para aprovechar índices GIN/PK.
+            if (nameCount > 0 && codeCount == 0 && !idExists)
+            {
+                var items = await ReadProductsAsync(nameDomain, limit: pageSize, offset: offset, ct: ct);
+                _cache.SetCount("product", normalizedQuery, "ALL", onlyInStock, nameCount);
+                return (items, nameCount);
+            }
 
-        if (codeCount > 0 && nameCount == 0 && !idExists)
-        {
-            var items = await ReadProductsAsync(codeDomain, limit: pageSize, offset: offset, ct: ct);
-            return (items, codeCount);
-        }
+            if (codeCount > 0 && nameCount == 0 && !idExists)
+            {
+                var items = await ReadProductsAsync(codeDomain, limit: pageSize, offset: offset, ct: ct);
+                _cache.SetCount("product", normalizedQuery, "ALL", onlyInStock, codeCount);
+                return (items, codeCount);
+            }
 
-        if (idExists && nameCount == 0 && codeCount == 0)
-        {
-            var items = await ReadProductsAsync(idDomain!, limit: pageSize, offset: offset, ct: ct);
-            return (items, idCount);
-        }
+            if (idExists && nameCount == 0 && codeCount == 0)
+            {
+                var items = await ReadProductsAsync(idDomain!, limit: pageSize, offset: offset, ct: ct);
+                _cache.SetCount("product", normalizedQuery, "ALL", onlyInStock, idCount);
+                return (items, idCount);
+            }
 
-        // Múltiples ramas con coincidencias: unión de IDs sin duplicados cuando la cardinalidad es acotada.
-        const int maxIndexedUnionCardinality = 5000;
-        if (nameCount <= maxIndexedUnionCardinality && codeCount <= maxIndexedUnionCardinality)
-        {
+            // Múltiples ramas con coincidencias: unión de IDs sin duplicados cuando la cardinalidad es acotada.
             var idSearchTasks = new List<Task<IReadOnlyList<int>>>(3);
             if (nameCount > 0) idSearchTasks.Add(SearchProductIdsAsync(nameDomain, ct));
             if (codeCount > 0) idSearchTasks.Add(SearchProductIdsAsync(codeDomain, ct));
@@ -230,6 +395,8 @@ public class OdooJson2PosAdapter : IOdooPosGateway
                 .ToList();
 
             var totalCount = distinctIds.Count;
+            _cache.SetCount("product", normalizedQuery, "ALL", onlyInStock, totalCount);
+
             var pageIds = distinctIds.Skip(offset).Take(pageSize).ToArray();
             if (pageIds.Length == 0)
             {
@@ -240,20 +407,33 @@ public class OdooJson2PosAdapter : IOdooPosGateway
             {
                 new object[] { "id", "in", pageIds }
             };
-            var items = await ReadProductsAsync(pageDomain, limit: pageSize, offset: 0, ct: ct);
-            return (items.OrderBy(p => p.Id).ToList(), totalCount);
+            var unionItems = await ReadProductsAsync(pageDomain, limit: pageSize, offset: 0, ct: ct);
+            return (unionItems.OrderBy(p => p.Id).ToList(), totalCount);
         }
 
-        // Fallback para alta cardinalidad (> 5000 en alguna rama) para evitar traer cientos de miles de IDs.
+        // Fallback para alta cardinalidad (>= 5001 en alguna rama): evita traer miles de IDs, usa order id asc y conteo acotado a 10000.
         var fallbackDomain = BuildProductDomain(q, "ALL", onlyInStock);
-        var fallbackCount = await CountProductsAsync(fallbackDomain, ct);
-        var fallbackItems = await ReadProductsAsync(fallbackDomain, limit: pageSize, offset: offset, ct: ct);
-        return (fallbackItems, fallbackCount);
+        if (_cache.TryGetCount("product", normalizedQuery, "ALL", onlyInStock, out var cachedFallbackCount))
+        {
+            var cachedFallbackItems = await ReadProductsAsync(fallbackDomain, limit: pageSize, offset: offset, ct: ct);
+            return (cachedFallbackItems, cachedFallbackCount);
+        }
+
+        var fallbackCountTask = CountModelAsync("product.product", fallbackDomain, MaxCountLimit, ct);
+        var fallbackItemsTask = ReadProductsAsync(fallbackDomain, limit: pageSize, offset: offset, ct: ct);
+        await Task.WhenAll(fallbackCountTask, fallbackItemsTask);
+
+        var fallbackCount = fallbackCountTask.Result;
+        _cache.SetCount("product", normalizedQuery, "ALL", onlyInStock, fallbackCount);
+        return (fallbackItemsTask.Result, fallbackCount);
     }
 
-    private async Task<int> CountProductsAsync(List<object> domain, CancellationToken ct)
+    private async Task<int> CountModelAsync(string model, List<object> domain, int? limit, CancellationToken ct)
     {
-        var countNode = await CallAsync("product.product", "search_count", new { domain }, ct);
+        object payload = limit.HasValue
+            ? new { domain, limit = limit.Value }
+            : new { domain };
+        var countNode = await CallAsync(model, "search_count", payload, ct);
         return countNode is JsonValue v && v.TryGetValue<int>(out var c)
             ? c
             : (int.TryParse(countNode?.ToString(), out var parsedC) ? parsedC : 0);
@@ -265,21 +445,126 @@ public class OdooJson2PosAdapter : IOdooPosGateway
         return ReadIdList(result).ToList();
     }
 
-    private static List<object> BuildCustomerDomain(string query, string? criteria = null)
+    private async Task<IReadOnlyList<int>> GetExcludedPartnerIdsAsync(CancellationToken ct)
+    {
+        if (_cache.TryGetExcludedPartnerIds(out var cached))
+        {
+            return cached;
+        }
+
+        await _cache.ExcludedPartnersLock.WaitAsync(ct);
+        try
+        {
+            if (_cache.TryGetExcludedPartnerIds(out cached))
+            {
+                return cached;
+            }
+
+            var usersTask = FetchIdsSafeAsync(
+                "res.users",
+                "search_read",
+                new
+                {
+                    domain = new object[] { new object[] { "partner_id", "!=", false } },
+                    fields = new[] { "partner_id" },
+                    context = new { active_test = false }
+                },
+                node => ExtractMany2OnePartnerIds(node),
+                ct);
+
+            var companiesTask = FetchIdsSafeAsync(
+                "res.company",
+                "search_read",
+                new
+                {
+                    domain = Array.Empty<object>(),
+                    fields = new[] { "partner_id" }
+                },
+                node => ExtractMany2OnePartnerIds(node),
+                ct);
+
+            var finalConsumerTask = FetchIdsSafeAsync(
+                "res.partner",
+                "search",
+                new
+                {
+                    domain = new object[]
+                    {
+                        "|",
+                        new object[] { "vat", "=", "9999999999999" },
+                        new object[] { "name", "ilike", "Consumidor Final" }
+                    }
+                },
+                node => ReadIdList(node),
+                ct);
+
+            await Task.WhenAll(usersTask, companiesTask, finalConsumerTask);
+
+            var merged = usersTask.Result.Ids
+                .Concat(companiesTask.Result.Ids)
+                .Concat(finalConsumerTask.Result.Ids)
+                .Where(id => id > 0)
+                .Distinct()
+                .OrderBy(id => id)
+                .ToArray();
+
+            if (usersTask.Result.Succeeded && companiesTask.Result.Succeeded && finalConsumerTask.Result.Succeeded)
+            {
+                _cache.SetExcludedPartnerIds(merged);
+            }
+
+            return merged;
+        }
+        finally
+        {
+            _cache.ExcludedPartnersLock.Release();
+        }
+    }
+
+    private async Task<(IReadOnlyList<int> Ids, bool Succeeded)> FetchIdsSafeAsync(
+        string model,
+        string method,
+        object body,
+        Func<JsonNode?, IEnumerable<int>> extractor,
+        CancellationToken ct)
+    {
+        try
+        {
+            var result = await CallAsync(model, method, body, ct);
+            return (extractor(result).ToArray(), true);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogDebug(ex, "No se pudo consultar IDs excluidos en {Model}.{Method}; se omite esta fuente.", model, method);
+            return (Array.Empty<int>(), false);
+        }
+    }
+
+    private static IEnumerable<int> ExtractMany2OnePartnerIds(JsonNode? node)
+    {
+        if (node is not JsonArray rows) yield break;
+        foreach (var row in rows)
+        {
+            if (row is null) continue;
+            var (partnerId, _) = ReadMany2One(row["partner_id"]);
+            if (partnerId > 0) yield return partnerId;
+        }
+    }
+
+    private static List<object> BuildCustomerDomain(string query, string? criteria = null, IReadOnlyList<int>? excludedPartnerIds = null)
     {
         // [FILTRADO ESTRICTO DE CLIENTES EXTERNOS EN ODOO]:
-        // 1. user_ids = false: Excluye usuarios del sistema (Administrator, cajeros, operadores, empleados).
-        // 2. ref_company_ids = false: Excluye la empresa emisora interna (My Company, sucursales).
-        // 3. vat != 9999999999999 y name != Consumidor Final: Excluye el registro genérico de Consumidor Final
-        //    (ya que el POS lo maneja como acción predeterminada dedicada sin partner Odoo).
+        // En lugar de filtros negativos costosos (user_ids = false, ref_company_ids = false, not ilike),
+        // excluimos los IDs cacheados de usuarios internos, compañías y Consumidor Final mediante id not in.
         var domain = new List<object>
         {
-            new object[] { "active", "=", true },
-            new object[] { "user_ids", "=", false },
-            new object[] { "ref_company_ids", "=", false },
-            new object[] { "vat", "!=", "9999999999999" },
-            new object[] { "name", "not ilike", "Consumidor Final" }
+            new object[] { "active", "=", true }
         };
+
+        if (excludedPartnerIds is { Count: > 0 })
+        {
+            domain.Add(new object[] { "id", "not in", excludedPartnerIds });
+        }
 
         if (string.IsNullOrWhiteSpace(query))
         {
@@ -287,7 +572,7 @@ public class OdooJson2PosAdapter : IOdooPosGateway
         }
 
         var q = query.Trim();
-        var cleanNum = q.TrimStart('#').Replace("id:", "", StringComparison.OrdinalIgnoreCase).Replace("id", "", StringComparison.OrdinalIgnoreCase).Trim();
+        var cleanNum = ExtractCleanNumericId(q);
         var crit = criteria?.Trim().ToUpperInvariant();
 
         if (crit == "ID")
@@ -307,10 +592,15 @@ public class OdooJson2PosAdapter : IOdooPosGateway
         }
         else if (crit == "VAT")
         {
-            domain.Add(new object[] { "vat", "ilike", q });
+            var escapedUpper = EscapeOdooLike(q).ToUpperInvariant();
+            domain.Add(new object[] { "vat", "=like", $"{escapedUpper}%" });
         }
         else // "ALL" o nulo (búsqueda general)
         {
+            object vatCondition = (IsNumericPrefix(q) || q.Length < 3)
+                ? new object[] { "vat", "=like", $"{EscapeOdooLike(q).ToUpperInvariant()}%" }
+                : new object[] { "vat", "ilike", q };
+
             if (int.TryParse(cleanNum, out var parsedId))
             {
                 domain.Add("|");
@@ -318,7 +608,7 @@ public class OdooJson2PosAdapter : IOdooPosGateway
                 domain.Add("|");
                 domain.Add(new object[] { "id", "=", parsedId });
                 domain.Add(new object[] { "name", "ilike", q });
-                domain.Add(new object[] { "vat", "ilike", q });
+                domain.Add(vatCondition);
                 domain.Add(new object[] { "email", "ilike", q });
             }
             else
@@ -326,7 +616,7 @@ public class OdooJson2PosAdapter : IOdooPosGateway
                 domain.Add("|");
                 domain.Add("|");
                 domain.Add(new object[] { "name", "ilike", q });
-                domain.Add(new object[] { "vat", "ilike", q });
+                domain.Add(vatCondition);
                 domain.Add(new object[] { "email", "ilike", q });
             }
         }
@@ -373,26 +663,57 @@ public class OdooJson2PosAdapter : IOdooPosGateway
         string? criteria = null,
         CancellationToken cancellationToken = default)
     {
-        var domain = BuildCustomerDomain(query, criteria);
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
         var offset = (page - 1) * pageSize;
 
-        var countNode = await CallAsync("res.partner", "search_count", new { domain }, cancellationToken);
-        var totalCount = countNode is JsonValue v && v.TryGetValue<int>(out var c)
-            ? c
-            : (int.TryParse(countNode?.ToString(), out var parsedC) ? parsedC : 0);
+        var hasQuery = !string.IsNullOrWhiteSpace(query);
+        var normalizedQuery = query?.Trim().ToUpperInvariant() ?? string.Empty;
+        var crit = criteria?.Trim().ToUpperInvariant();
+        var normalizedCrit = !hasQuery || string.IsNullOrEmpty(crit) ? "ALL" : crit;
 
-        var result = await CallAsync("res.partner", "search_read", new
-        {
-            domain,
-            fields = new[] { "id", "name", "vat", "email", "street", "phone", "customer_rank" },
-            limit = pageSize,
-            offset
-        }, cancellationToken);
+        var excludedIds = await GetExcludedPartnerIdsAsync(cancellationToken);
+        var domain = BuildCustomerDomain(query ?? string.Empty, criteria, excludedIds);
+        int? countLimit = hasQuery ? MaxCountLimit : null;
 
-        var customers = ParseCustomers(result);
-        return (customers, totalCount);
+        return await ReadPagedWithShortCircuitAndCacheAsync(
+            cacheType: "customer",
+            normalizedQuery: normalizedQuery,
+            normalizedCriteria: normalizedCrit,
+            onlyInStock: false,
+            page: page,
+            pageSize: pageSize,
+            readPageAsync: () => ReadCustomersWithRawCountAsync(domain, pageSize, offset, hasQuery, cancellationToken),
+            countAsync: () => CountModelAsync("res.partner", domain, countLimit, cancellationToken));
+    }
+
+    private async Task<(IReadOnlyList<CustomerDto> Items, int RawCount)> ReadCustomersWithRawCountAsync(
+        List<object> domain,
+        int limit,
+        int offset,
+        bool hasQuery,
+        CancellationToken ct)
+    {
+        object payload = hasQuery
+            ? new
+            {
+                domain,
+                fields = CustomerFields,
+                limit,
+                offset,
+                order = "id asc"
+            }
+            : new
+            {
+                domain,
+                fields = CustomerFields,
+                limit,
+                offset
+            };
+
+        var result = await CallAsync("res.partner", "search_read", payload, ct);
+        var rows = result?.AsArray() ?? new JsonArray();
+        return (ParseCustomers(result), rows.Count);
     }
 
     public Task<IReadOnlyList<ProductDto>> GetProductsByIdsAsync(IReadOnlyCollection<int> productIds, CancellationToken cancellationToken = default)
@@ -411,17 +732,28 @@ public class OdooJson2PosAdapter : IOdooPosGateway
 
     private async Task<IReadOnlyList<ProductDto>> ReadProductsAsync(List<object> domain, int limit, int offset = 0, CancellationToken ct = default)
     {
+        var (items, _) = await ReadProductsWithRawCountAsync(domain, limit, offset, ct);
+        return items;
+    }
+
+    private async Task<(IReadOnlyList<ProductDto> Items, int RawCount)> ReadProductsWithRawCountAsync(
+        List<object> domain,
+        int limit,
+        int offset = 0,
+        CancellationToken ct = default)
+    {
         var result = await CallAsync("product.product", "search_read", new
         {
             domain,
             fields = ProductFields,
             limit,
-            offset
+            offset,
+            order = "id asc"
         }, ct);
 
         var rows = result?.AsArray() ?? new JsonArray();
 
-        // Resolver la configuración fiscal (account.tax) de todos los productos en una sola llamada.
+        // Resolver la configuración fiscal (account.tax) de todos los productos en una sola llamada (con caché TTL).
         var allTaxIds = rows
             .SelectMany(r => ReadIdList(r?["taxes_id"]))
             .Distinct()
@@ -452,7 +784,7 @@ public class OdooJson2PosAdapter : IOdooPosGateway
                 TaxIds: taxIds));
         }
 
-        return products;
+        return (products, rows.Count);
     }
 
     private async Task<Dictionary<int, (decimal Rate, bool PriceInclude)>> ReadTaxesAsync(int[] taxIds, CancellationToken ct)
@@ -460,22 +792,55 @@ public class OdooJson2PosAdapter : IOdooPosGateway
         var map = new Dictionary<int, (decimal Rate, bool PriceInclude)>();
         if (taxIds.Length == 0) return map;
 
-        var result = await CallAsync("account.tax", "search_read", new
+        var missingIds = new List<int>(taxIds.Length);
+        foreach (var id in taxIds)
         {
-            domain = new object[] { new object[] { "id", "in", taxIds } },
-            fields = new[] { "id", "amount", "amount_type", "price_include" }
-        }, ct);
-
-        foreach (var tax in result?.AsArray() ?? new JsonArray())
-        {
-            if (tax is null) continue;
-            if (!string.Equals(ReadString(tax["amount_type"]), "percent", StringComparison.Ordinal))
+            if (_cache.TryGetTax(id, out var cached))
             {
-                _logger.LogWarning("Impuesto {TaxId} con amount_type no porcentual: se ignora en el cálculo local.", tax["id"]);
-                continue;
+                if (cached.IsPercent)
+                {
+                    map[id] = (cached.Rate, cached.PriceInclude);
+                }
             }
+            else
+            {
+                missingIds.Add(id);
+            }
+        }
 
-            map[tax["id"]!.GetValue<int>()] = (ReadDecimal(tax["amount"]) / 100m, tax["price_include"]?.GetValue<bool>() == true);
+        if (missingIds.Count == 0)
+        {
+            return map;
+        }
+
+        try
+        {
+            var result = await CallAsync("account.tax", "search_read", new
+            {
+                domain = new object[] { new object[] { "id", "in", missingIds.ToArray() } },
+                fields = new[] { "id", "amount", "amount_type", "price_include" }
+            }, ct);
+
+            foreach (var tax in result?.AsArray() ?? new JsonArray())
+            {
+                if (tax is null) continue;
+                var taxId = tax["id"]!.GetValue<int>();
+                if (!string.Equals(ReadString(tax["amount_type"]), "percent", StringComparison.Ordinal))
+                {
+                    _logger.LogWarning("Impuesto {TaxId} con amount_type no porcentual: se ignora en el cálculo local.", tax["id"]);
+                    _cache.SetTax(taxId, 0m, false, isPercent: false);
+                    continue;
+                }
+
+                var rate = ReadDecimal(tax["amount"]) / 100m;
+                var priceInclude = tax["price_include"]?.GetValue<bool>() == true;
+                _cache.SetTax(taxId, rate, priceInclude, isPercent: true);
+                map[taxId] = (rate, priceInclude);
+            }
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "No se pudo consultar account.tax en Odoo para IDs [{TaxIds}]; se continúa con el mapa fiscal disponible.", string.Join(",", missingIds));
         }
 
         return map;

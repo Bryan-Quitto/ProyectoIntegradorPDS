@@ -62,6 +62,7 @@ public static class DependencyInjection
         });
 
         // 4. Gateways & Repositories
+        services.AddSingleton<OdooAdapterCache>();
         services.AddHttpClient<IOdooPosGateway, OdooJson2PosAdapter>((sp, client) =>
         {
             client.Timeout = TimeSpan.FromSeconds(60);

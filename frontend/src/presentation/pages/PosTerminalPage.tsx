@@ -232,7 +232,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
     applyDiscount,
   } = usePosCart();
 
-  const { products, activeSession, loading, error, refresh } = useProducts();
+  const { products, activeSession, error, refreshSession } = useProducts('', 1, 8, undefined, undefined, false, true);
   const { checkout, processing, lastResult, resetCheckoutSession } = useCheckout();
 
   // Verificación de caja asignada al vendedor (Fase 4 / Control de Acceso)
@@ -366,6 +366,25 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
     addItem(product, 1);
   };
 
+  const syncTerminalStatus = async () => {
+    const cartProductIds = items.map((i) => i.productId);
+    const [freshSession, freshCartProducts] = await Promise.all([
+      refreshSession(),
+      cartProductIds.length > 0 ? getProductsByIdsUseCase.execute(cartProductIds) : Promise.resolve([]),
+    ]);
+
+    if (freshCartProducts.length > 0) {
+      setCartProductsMap((prev) => {
+        const next = new Map(prev);
+        for (const p of freshCartProducts) {
+          next.set(p.id, p);
+        }
+        return next;
+      });
+    }
+    return { freshSession, freshCartProducts };
+  };
+
   // Enlace del partner_id de Odoo a la orden
   const handleConfirmPayment = async (
     customerDoc: string,
@@ -400,20 +419,12 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
       setSyncError(result.errorMessage);
     } else if (result.success) {
       setSyncError(null);
-      void refresh();
     }
 
     return result;
   };
 
   const handlePaymentSubmit = handleConfirmPayment;
-
-  // Recargar catálogo de stock siempre que se abra el modal de búsqueda de productos
-  useEffect(() => {
-    if (productModalOpen) {
-      void refresh();
-    }
-  }, [productModalOpen, refresh]);
 
   // [FIX UI/UX]: Si el usuario cierra el modal de venta sincronizada con la 'X' o botón secundario para modificar la orden,
   // NO limpiamos el carrito. Los productos se preservan en la orden para que pueda hacer ajustes.
@@ -427,9 +438,9 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
     clearCart();
     applyDiscount('NONE', 0);
     setSelectedCustomer(null);
+    setCartProductsMap(new Map());
     resetCheckoutSession();
     setPaymentModalOpen(false);
-    refresh();
   };
 
   const handleConfirmReset = () => {
@@ -448,16 +459,14 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
     setSyncError(null);
 
     try {
-      // 1. Consulta en caliente a Odoo ERP para sincronizar inventario y sesión en tiempo real
-      const freshData = await refresh();
-      const freshProducts = freshData?.products ?? products;
-      const freshSession = freshData?.session ?? activeSession;
-
-      // Consultar a Odoo el stock fresco específicamente de los IDs de los ítems en el carrito (Catálogo 1M+)
+      // 1. Consultar a Odoo el stock fresco específicamente de los IDs de los ítems en el carrito (Catálogo 1M+)
       const cartProductIds = items.map((i) => i.productId);
-      const freshCartProducts = cartProductIds.length > 0
-        ? await getProductsByIdsUseCase.execute(cartProductIds)
-        : [];
+      const [freshCartProducts, freshSession] = await Promise.all([
+        cartProductIds.length > 0
+          ? getProductsByIdsUseCase.execute(cartProductIds)
+          : Promise.resolve([]),
+        hasAssignedSession ? Promise.resolve(activeSession) : refreshSession(),
+      ]);
 
       // Actualizar el estado de productos del carrito con el stock fresco de Odoo
       if (freshCartProducts.length > 0) {
@@ -472,7 +481,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
 
       // 2. Mapeo de stock actualizado combinando base, caché local y datos frescos por ID
       const freshMap = new Map<number, Product>();
-      for (const p of freshProducts) {
+      for (const p of products) {
         freshMap.set(p.id, p);
       }
       for (const [id, p] of cartProductsMap) {
@@ -619,7 +628,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
           <Button
             variant="outline"
             size="sm"
-            onClick={() => refresh()}
+            onClick={() => void syncTerminalStatus()}
             className="h-8 gap-1.5 text-xs border-slate-300 hover:bg-slate-50"
           >
             <RefreshCw className="h-3.5 w-3.5" />
@@ -657,7 +666,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
             <span className="font-medium">{error}</span>
           </div>
           <button
-            onClick={() => refresh()}
+            onClick={() => void syncTerminalStatus()}
             className="underline font-bold text-rose-800 hover:text-rose-950 ml-4 shrink-0 transition-colors"
           >
             Reintentar
@@ -1393,7 +1402,6 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
         }}
         selectedProductIds={items.map((i) => i.productId)}
         onSelectProduct={handleSelectOrReplaceProduct}
-        loading={loading}
         replacingProductId={replacingItem?.productId}
         replacingProductName={replacingItem?.productName}
       />

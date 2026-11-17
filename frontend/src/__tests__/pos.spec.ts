@@ -1236,4 +1236,37 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
       global.fetch = originalFetch;
     }
   });
+
+  // =========================================================================
+  // P47: PosApiHttpAdapter y SearchCustomersUseCase propagan AbortSignal en getCustomers y relanzan AbortError
+  // =========================================================================
+  it('P47: PosApiHttpAdapter y SearchCustomersUseCase propagan AbortSignal en getCustomers sin enmascarar AbortError como 503', async () => {
+    const adapter = new PosApiHttpAdapter('http://localhost:5000');
+    const useCase = new SearchCustomersUseCase(adapter);
+    const controller = new AbortController();
+    const originalFetch = global.fetch;
+
+    try {
+      const abortError = new DOMException('The operation was aborted.', 'AbortError');
+      const mockFetch = vi.fn().mockRejectedValue(abortError);
+      global.fetch = mockFetch;
+
+      await expect(
+        useCase.execute('Lopez', 1, 8, 'all', controller.signal)
+      ).rejects.toMatchObject({
+        name: 'AbortError',
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('search=Lopez'),
+        expect.objectContaining({ signal: controller.signal })
+      );
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('criteria=all'),
+        expect.anything()
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });

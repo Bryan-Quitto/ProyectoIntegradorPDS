@@ -2,14 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Product } from '@/domain/Product';
 import { PosSession } from '@/application/ports/IPosApiGateway';
 import { searchCatalogUseCase, getActiveSessionUseCase } from '@/di';
-import { formatUserErrorMessage } from '../utils/errorHandler';
-
-function isAbortError(err: unknown): boolean {
-  return (
-    (err instanceof Error && err.name === 'AbortError') ||
-    (typeof DOMException !== 'undefined' && err instanceof DOMException && err.name === 'AbortError')
-  );
-}
+import { formatUserErrorMessage, isAbortError } from '../utils/errorHandler';
 
 export function useProducts(
   initialQuery = '',
@@ -17,7 +10,8 @@ export function useProducts(
   pageSize?: number,
   criteria?: string,
   onlyInStock?: boolean,
-  enabled = true
+  enabled = true,
+  fetchSession = page === undefined
 ) {
   const [products, setProducts] = useState<Product[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
@@ -26,6 +20,23 @@ export function useProducts(
   const [error, setError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const latestRequestRef = useRef<number>(0);
+  const activeSessionRef = useRef<PosSession | null>(null);
+
+  const refreshSession = useCallback(async (): Promise<PosSession | null> => {
+    try {
+      const session = await getActiveSessionUseCase.execute();
+      activeSessionRef.current = session;
+      setActiveSession(session);
+      return session;
+    } catch {
+      return activeSessionRef.current;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!fetchSession) return;
+    void refreshSession();
+  }, [fetchSession, refreshSession]);
 
   const loadData = useCallback(
     async (
@@ -43,18 +54,14 @@ export function useProducts(
       setLoading(true);
       setError(null);
       try {
-        const [prods, session] = await Promise.all([
-          searchCatalogUseCase.execute(query, p, ps, crit, inStock, controller.signal),
-          getActiveSessionUseCase.execute(),
-        ]);
+        const prods = await searchCatalogUseCase.execute(query, p, ps, crit, inStock, controller.signal);
         if (controller.signal.aborted || requestId !== latestRequestRef.current) {
           return null;
         }
         setProducts(prods);
         const count = (prods as any)?.totalCount ?? prods.length;
         setTotalCount(count);
-        setActiveSession(session);
-        return { products: prods, session, totalCount: count };
+        return { products: prods, session: activeSessionRef.current, totalCount: count };
       } catch (err: unknown) {
         if (controller.signal.aborted || isAbortError(err) || requestId !== latestRequestRef.current) {
           return null;
@@ -95,5 +102,6 @@ export function useProducts(
     loading,
     error,
     refresh: loadData,
+    refreshSession,
   };
 }

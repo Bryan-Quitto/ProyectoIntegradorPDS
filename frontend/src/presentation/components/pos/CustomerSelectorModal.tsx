@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Search, Check, AlertCircle, Users, User, X, Building2, Phone, Mail, MapPin } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, Check, AlertCircle, Users, User, X, Phone, Mail, MapPin } from 'lucide-react';
 import { Customer } from '@/application/ports/IPosApiGateway';
 import { useCustomers } from '@/presentation/hooks/useCustomers';
 import { Dialog } from '../ui/Dialog';
@@ -32,31 +32,35 @@ export const CustomerSelectorModal: React.FC<CustomerSelectorModalProps> = ({
 
   const debouncedSearchTerm = useDebounce(searchTerm, 350);
 
+  // Evita doble petición HTTP cuando pageNumber > 1 y cambian filtros o búsqueda:
+  // si el criterio cambió respecto al último aplicado, se usa página 1 inmediatamente en este mismo render.
+  const [appliedCriteria, setAppliedCriteria] = useState({
+    search: debouncedSearchTerm,
+    criteria: searchCriteria,
+  });
+  const criteriaChanged =
+    appliedCriteria.search !== debouncedSearchTerm ||
+    appliedCriteria.criteria !== searchCriteria;
+  const effectivePage = criteriaChanged ? 1 : pageNumber;
+
   // Consulta con paginación server-side sobre Odoo 20 (res.partner)
   const { customers, totalCount, loading, error, refresh } = useCustomers(
     debouncedSearchTerm,
-    pageNumber,
+    effectivePage,
     pageSize,
-    searchCriteria
+    searchCriteria,
+    open
   );
 
-  // Reset de página al cambiar término de búsqueda o criterio
-  const prevFilterRef = useRef({ search: debouncedSearchTerm, criteria: searchCriteria });
+  // Sincronización de criterios aplicados y reset de página sin duplicar peticiones
   useEffect(() => {
-    if (
-      prevFilterRef.current.search !== debouncedSearchTerm ||
-      prevFilterRef.current.criteria !== searchCriteria
-    ) {
-      prevFilterRef.current = { search: debouncedSearchTerm, criteria: searchCriteria };
-      setPageNumber(1);
+    if (criteriaChanged) {
+      setAppliedCriteria({ search: debouncedSearchTerm, criteria: searchCriteria });
+      if (pageNumber !== 1) {
+        setPageNumber(1);
+      }
     }
-  }, [debouncedSearchTerm, searchCriteria]);
-
-  useEffect(() => {
-    if (open) {
-      refresh(debouncedSearchTerm, pageNumber, pageSize, searchCriteria);
-    }
-  }, [open, debouncedSearchTerm, pageNumber, pageSize, searchCriteria, refresh]);
+  }, [criteriaChanged, debouncedSearchTerm, searchCriteria, pageNumber]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const pagedCustomers = customers;
@@ -162,9 +166,23 @@ export const CustomerSelectorModal: React.FC<CustomerSelectorModalProps> = ({
 
         {/* Mensaje de Error */}
         {error && (
-          <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center space-x-2">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            <span>{error}</span>
+          <div
+            role="alert"
+            className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center justify-between gap-2 shadow-xs"
+          >
+            <div className="flex items-center space-x-2">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span className="font-medium">{error}</span>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void refresh(debouncedSearchTerm, effectivePage, pageSize, searchCriteria)}
+              className="h-7 px-2 text-xs text-rose-700 hover:text-rose-900 hover:bg-rose-100 shrink-0"
+            >
+              Reintentar
+            </Button>
           </div>
         )}
 
@@ -282,7 +300,7 @@ export const CustomerSelectorModal: React.FC<CustomerSelectorModalProps> = ({
           {/* Paginación */}
           {!loading && !error && totalCount > 0 && (
             <Pagination
-              currentPage={pageNumber}
+              currentPage={effectivePage}
               totalPages={totalPages}
               totalCount={totalCount}
               pageSize={pageSize}

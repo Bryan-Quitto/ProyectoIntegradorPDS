@@ -1844,6 +1844,218 @@ public class PosTests
         recordedCalls.Should().NotContain(c => c.Path.EndsWith("/product.product/search", StringComparison.Ordinal));
     }
 
+    // =========================================================================
+    // P38: OdooJson2PosAdapter - Optimizaciones P2 (Cortocircuito, Tope 10000, Caché, =like, order, cleanNum)
+    // =========================================================================
+    [Fact]
+    public async Task P38_A_SearchProductsPaged_Page1ShortCircuit_SkipsSearchCountAndCachesTotal()
+    {
+        var recordedCalls = new System.Collections.Concurrent.ConcurrentBag<(string Path, string Body)>();
+        var handler = new MockOdooHttpMessageHandler((path, body) =>
+        {
+            recordedCalls.Add((path, body));
+            if (path.EndsWith("/product.product/search_read", StringComparison.Ordinal))
+            {
+                body.Should().Contain("\"order\":\"id asc\"");
+                return """
+                    [
+                      { "id": 10, "name": "Cafe", "default_code": "C10", "lst_price": 2.5, "barcode": false, "qty_available": 12.0, "taxes_id": [1] },
+                      { "id": 11, "name": "Cafe Doble", "default_code": "C11", "lst_price": 3.5, "barcode": false, "qty_available": 8.0, "taxes_id": [1] }
+                    ]
+                    """;
+            }
+            if (path.EndsWith("/account.tax/search_read", StringComparison.Ordinal))
+            {
+                return """
+                    [
+                      { "id": 1, "amount": 15.0, "amount_type": "percent", "price_include": true }
+                    ]
+                    """;
+            }
+            throw new InvalidOperationException($"No debía llamar search_count en cortocircuito page=1: {path}");
+        });
+
+        var adapter = CreateOdooAdapter(handler);
+        var (items1, total1) = await adapter.SearchProductsPagedAsync("Cafe", page: 1, pageSize: 8, criteria: "NAME");
+        var (items2, total2) = await adapter.SearchProductsPagedAsync("Cafe", page: 1, pageSize: 8, criteria: "NAME");
+
+        total1.Should().Be(2);
+        total2.Should().Be(2);
+        items1.Should().HaveCount(2);
+        items1[0].TaxRate.Should().Be(0.15m);
+        items2.Should().HaveCount(2);
+        recordedCalls.Should().NotContain(c => c.Path.EndsWith("/search_count", StringComparison.Ordinal));
+        // account.tax se consulta una sola vez gracias a la caché en memoria
+        recordedCalls.Count(c => c.Path.EndsWith("/account.tax/search_read", StringComparison.Ordinal)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task P38_B_SearchProductsPaged_FullPage1_CapsSearchCountAt10000AndCaches()
+    {
+        var recordedCalls = new System.Collections.Concurrent.ConcurrentBag<(string Path, string Body)>();
+        var handler = new MockOdooHttpMessageHandler((path, body) =>
+        {
+            recordedCalls.Add((path, body));
+            if (path.EndsWith("/product.product/search_read", StringComparison.Ordinal))
+            {
+                return """
+                    [
+                      { "id": 1, "name": "Item 1", "default_code": "I1", "lst_price": 1.0, "barcode": false, "qty_available": 5.0, "taxes_id": [] },
+                      { "id": 2, "name": "Item 2", "default_code": "I2", "lst_price": 1.0, "barcode": false, "qty_available": 5.0, "taxes_id": [] }
+                    ]
+                    """;
+            }
+            if (path.EndsWith("/product.product/search_count", StringComparison.Ordinal))
+            {
+                if (body.Contains("\"Item\"", StringComparison.Ordinal))
+                {
+                    body.Should().Contain("\"limit\":10000");
+                    return "10000";
+                }
+
+                body.Should().NotContain("\"limit\"");
+                return "1000006";
+            }
+            if (path.EndsWith("/res.users/search_read", StringComparison.Ordinal))
+                return """[{ "id": 1, "partner_id": [3, "Admin"] }]""";
+            if (path.EndsWith("/res.company/search_read", StringComparison.Ordinal))
+                return """[{ "id": 1, "partner_id": [1, "My Company"] }]""";
+            if (path.EndsWith("/res.partner/search", StringComparison.Ordinal))
+                return "[7]";
+            if (path.EndsWith("/res.partner/search_read", StringComparison.Ordinal))
+            {
+                return """
+                    [
+                      { "id": 20, "name": "Ana Lopez", "vat": "1712345678", "email": "ana@test.com", "street": "Av 1", "phone": "099" },
+                      { "id": 21, "name": "Luis Perez", "vat": "1712345679", "email": "luis@test.com", "street": "Av 2", "phone": "098" }
+                    ]
+                    """;
+            }
+            if (path.EndsWith("/res.partner/search_count", StringComparison.Ordinal))
+            {
+                body.Should().NotContain("\"limit\"");
+                return "1000007";
+            }
+            throw new InvalidOperationException($"Llamada inesperada: {path}");
+        });
+
+        var adapter = CreateOdooAdapter(handler);
+
+        // 1. Búsqueda activa en Productos ("Item", criteria: "NAME") sí aplica limit:10000 y cachea 10000
+        var (_, searchTotal1) = await adapter.SearchProductsPagedAsync("Item", page: 1, pageSize: 2, criteria: "NAME");
+        var (_, searchTotal2) = await adapter.SearchProductsPagedAsync("Item", page: 2, pageSize: 2, criteria: "NAME");
+        searchTotal1.Should().Be(10000);
+        searchTotal2.Should().Be(10000);
+
+        // 2. Búsqueda vacía en Productos NO envía limit, devuelve 1000006 y cachea 30s
+        var (_, emptyProdTotal1) = await adapter.SearchProductsPagedAsync("", page: 1, pageSize: 2, criteria: "ALL");
+        var (_, emptyProdTotal2) = await adapter.SearchProductsPagedAsync("", page: 2, pageSize: 2, criteria: "ALL");
+        emptyProdTotal1.Should().Be(1000006);
+        emptyProdTotal2.Should().Be(1000006);
+
+        // 3. Búsqueda vacía en Clientes NO envía limit, devuelve 1000007 y cachea 30s
+        var (_, emptyCustTotal1) = await adapter.SearchCustomersPagedAsync("", page: 1, pageSize: 2, criteria: "ALL");
+        var (_, emptyCustTotal2) = await adapter.SearchCustomersPagedAsync("", page: 2, pageSize: 2, criteria: "ALL");
+        emptyCustTotal1.Should().Be(1000007);
+        emptyCustTotal2.Should().Be(1000007);
+
+        // Cada caso ejecutó search_count exactamente 1 vez (página 2 reutiliza caché TTL 30s)
+        recordedCalls.Count(c => c.Path.EndsWith("/product.product/search_count", StringComparison.Ordinal)).Should().Be(2);
+        recordedCalls.Count(c => c.Path.EndsWith("/res.partner/search_count", StringComparison.Ordinal)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task P38_C_SearchCustomersPaged_UsesExcludedCache_VatPrefixLike_OrderAndNoCustomerRank()
+    {
+        var recordedCalls = new System.Collections.Concurrent.ConcurrentQueue<(string Path, string Body)>();
+        var handler = new MockOdooHttpMessageHandler((path, body) =>
+        {
+            recordedCalls.Enqueue((path, body));
+            if (path.EndsWith("/res.users/search_read", StringComparison.Ordinal))
+                return """[{ "id": 1, "partner_id": [3, "Admin"] }]""";
+            if (path.EndsWith("/res.company/search_read", StringComparison.Ordinal))
+                return """[{ "id": 1, "partner_id": [1, "My Company"] }]""";
+            if (path.EndsWith("/res.partner/search", StringComparison.Ordinal))
+                return "[7]";
+            if (path.EndsWith("/res.partner/search_read", StringComparison.Ordinal))
+            {
+                body.Should().NotContain("customer_rank");
+                body.Should().NotContain("user_ids");
+                body.Should().NotContain("ref_company_ids");
+                body.Should().NotContain("not ilike");
+                body.Should().Contain("\"not in\",[1,3,7]");
+                return """
+                    [
+                      { "id": 20, "name": "Ana Lopez", "vat": "1712345678", "email": "ana@test.com", "street": "Av 1", "phone": "099" }
+                    ]
+                    """;
+            }
+            if (path.EndsWith("/res.partner/search_count", StringComparison.Ordinal))
+            {
+                body.Should().Contain("\"limit\":10000");
+                return "1";
+            }
+            throw new InvalidOperationException($"Llamada inesperada: {path}");
+        });
+
+        var adapter = CreateOdooAdapter(handler);
+
+        // 1. Consulta con query vacía: no debe enviar order="id asc" y debe hacer cortocircuito en page=1
+        var (emptyItems, emptyTotal) = await adapter.SearchCustomersPagedAsync("", page: 1, pageSize: 8, criteria: "all");
+        emptyItems.Should().HaveCount(1);
+        emptyTotal.Should().Be(1);
+
+        // 2. Consulta VAT con prefijo de 2 dígitos: usa =like "17%" y order="id asc"
+        await adapter.SearchCustomersPagedAsync("17", page: 1, pageSize: 8, criteria: "vat");
+
+        // 3. Consulta ALL numérica "17": usa =like "17%" para vat y order="id asc"
+        await adapter.SearchCustomersPagedAsync("17", page: 1, pageSize: 8, criteria: "all");
+
+        var searchReads = recordedCalls.Where(c => c.Path.EndsWith("/res.partner/search_read", StringComparison.Ordinal)).ToList();
+        searchReads.Should().HaveCount(3);
+        searchReads[0].Body.Should().NotContain("\"order\":\"id asc\"");
+        searchReads[1].Body.Should().Contain("\"vat\",\"=like\",\"17%\"");
+        searchReads[1].Body.Should().Contain("\"order\":\"id asc\"");
+        searchReads[2].Body.Should().Contain("\"vat\",\"=like\",\"17%\"");
+        searchReads[2].Body.Should().Contain("\"order\":\"id asc\"");
+
+        // Los IDs excluidos se consultan 1 sola vez gracias a la caché de 5 min
+        recordedCalls.Count(c => c.Path.EndsWith("/res.users/search_read", StringComparison.Ordinal)).Should().Be(1);
+        recordedCalls.Count(c => c.Path.EndsWith("/res.company/search_read", StringComparison.Ordinal)).Should().Be(1);
+        recordedCalls.Count(c => c.Path.EndsWith("/res.partner/search", StringComparison.Ordinal)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task P38_D_CleanNum_DoesNotCorruptWordsContainingIdInMiddle()
+    {
+        var capturedBodies = new System.Collections.Concurrent.ConcurrentBag<string>();
+        var handler = new MockOdooHttpMessageHandler((path, body) =>
+        {
+            capturedBodies.Add(body);
+            if (path.EndsWith("/product.product/search_count", StringComparison.Ordinal)) return "0";
+            if (path.EndsWith("/product.product/search_read", StringComparison.Ordinal)) return "[]";
+            if (path.EndsWith("/res.partner/search_read", StringComparison.Ordinal)) return "[]";
+            // Simular mock sin handlers de excluidos para verificar fallback limpio
+            throw new InvalidOperationException($"No mockeado: {path}");
+        });
+
+        var adapter = CreateOdooAdapter(handler);
+
+        // "comida" y "bebida" NO deben convertirse en "coma" / "beba" ni disparar rama ID;
+        // "12id3" NO debe convertirse en ID 123
+        await adapter.SearchProductsPagedAsync("comida", page: 1, pageSize: 8, criteria: "ID");
+        await adapter.SearchProductsPagedAsync("12id3", page: 1, pageSize: 8, criteria: "ID");
+        await adapter.SearchProductsPagedAsync("id:42", page: 1, pageSize: 8, criteria: "ID");
+        await adapter.SearchCustomersPagedAsync("bebida", page: 1, pageSize: 8, criteria: "id");
+        await adapter.SearchCustomersPagedAsync("#99", page: 1, pageSize: 8, criteria: "id");
+
+        capturedBodies.Should().Contain(b => b.Contains("\"id\",\"=\",42"));
+        capturedBodies.Should().Contain(b => b.Contains("\"id\",\"=\",99"));
+        capturedBodies.Should().NotContain(b => b.Contains("\"id\",\"=\",123"));
+        capturedBodies.Should().NotContain(b => b.Contains("coma", StringComparison.OrdinalIgnoreCase));
+        capturedBodies.Should().NotContain(b => b.Contains("beba", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static Pos.Infrastructure.Odoo.OdooJson2PosAdapter CreateOdooAdapter(HttpMessageHandler handler)
     {
         var httpClient = new HttpClient(handler);

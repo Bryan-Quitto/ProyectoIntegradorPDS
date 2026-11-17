@@ -186,7 +186,13 @@ export class PosApiHttpAdapter implements IPosApiGateway {
     }));
   }
 
-  public async getCustomers(search?: string, page?: number, pageSize?: number, criteria?: string): Promise<Customer[]> {
+  public async getCustomers(
+    search?: string,
+    page?: number,
+    pageSize?: number,
+    criteria?: string,
+    signal?: AbortSignal
+  ): Promise<Customer[]> {
     const url = new URL(`${this._baseUrl}/api/customers`);
     if (search?.trim()) {
       url.searchParams.set('search', search.trim());
@@ -207,6 +213,7 @@ export class PosApiHttpAdapter implements IPosApiGateway {
         Accept: 'application/json',
         ...this.getAuthHeader(),
       },
+      ...(signal ? { signal } : {}),
     });
 
     const totalCountHeader = response.headers.get('x-total-count') || response.headers.get('X-Total-Count');

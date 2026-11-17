@@ -157,30 +157,85 @@ export class SearchCustomersUseCase {
   }
 
   public async execute(
+    gateway: IPosApiGateway,
+    query?: string,
+    page?: number,
+    pageSize?: number,
+    criteria?: string,
+    signal?: AbortSignal
+  ): Promise<Customer[]>;
+  public async execute(
+    query?: string,
+    page?: number,
+    pageSize?: number,
+    criteria?: string,
+    signal?: AbortSignal
+  ): Promise<Customer[]>;
+  public async execute(
     queryOrGateway?: string | IPosApiGateway,
     queryOrPage?: string | number,
     pageOrPageSize?: number,
     pageSizeOrCriteria?: number | string,
-    criteria?: string
+    criteriaOrSignal?: string | AbortSignal,
+    signalParam?: AbortSignal
   ): Promise<Customer[]> {
     if (queryOrGateway && typeof queryOrGateway === 'object' && 'getCustomers' in queryOrGateway) {
       const q = typeof queryOrPage === 'string' ? queryOrPage : undefined;
       const p = typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined;
       const ps = typeof pageSizeOrCriteria === 'number' ? pageSizeOrCriteria : undefined;
-      const crit = typeof criteria === 'string' ? criteria : (typeof pageSizeOrCriteria === 'string' ? pageSizeOrCriteria : undefined);
+      const crit =
+        typeof criteriaOrSignal === 'string'
+          ? criteriaOrSignal
+          : typeof pageSizeOrCriteria === 'string'
+          ? pageSizeOrCriteria
+          : undefined;
+      const sig =
+        signalParam ??
+        (criteriaOrSignal && typeof criteriaOrSignal === 'object' && 'aborted' in criteriaOrSignal
+          ? criteriaOrSignal
+          : undefined);
+
+      if (sig !== undefined) {
+        return await queryOrGateway.getCustomers(q, p, ps, crit, sig);
+      }
       if (p !== undefined || ps !== undefined || crit !== undefined) {
         return await queryOrGateway.getCustomers(q, p, ps, crit);
       }
       return await queryOrGateway.getCustomers(q);
     }
+
     const gateway = this._gateway;
     if (!gateway) {
       throw new Error('IPosApiGateway no provisto a SearchCustomersUseCase');
     }
+
     const q = typeof queryOrGateway === 'string' ? queryOrGateway : undefined;
-    const p = typeof queryOrPage === 'number' ? queryOrPage : (typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined);
-    const ps = typeof pageSizeOrCriteria === 'number' ? pageSizeOrCriteria : (typeof queryOrPage === 'number' && typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined);
-    const crit = typeof criteria === 'string' ? criteria : (typeof pageSizeOrCriteria === 'string' ? pageSizeOrCriteria : undefined);
+    const p =
+      typeof queryOrPage === 'number'
+        ? queryOrPage
+        : typeof pageOrPageSize === 'number'
+        ? pageOrPageSize
+        : undefined;
+    const ps =
+      typeof pageSizeOrCriteria === 'number'
+        ? pageSizeOrCriteria
+        : typeof queryOrPage === 'number' && typeof pageOrPageSize === 'number'
+        ? pageOrPageSize
+        : undefined;
+    const crit =
+      typeof criteriaOrSignal === 'string'
+        ? criteriaOrSignal
+        : typeof pageSizeOrCriteria === 'string'
+        ? pageSizeOrCriteria
+        : undefined;
+    const sig =
+      criteriaOrSignal && typeof criteriaOrSignal === 'object' && 'aborted' in criteriaOrSignal
+        ? criteriaOrSignal
+        : signalParam;
+
+    if (sig !== undefined) {
+      return await gateway.getCustomers(q, p, ps, crit, sig);
+    }
     if (p !== undefined || ps !== undefined || crit !== undefined) {
       return await gateway.getCustomers(q, p, ps, crit);
     }
