@@ -1176,4 +1176,31 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
     expect(isSessionReassignedOrUnauthorized(errorMsgForbidden)).toBe(true);
     expect(isSessionReassignedOrUnauthorized('Error de red al consultar productos')).toBe(false);
   });
+
+  // =========================================================================
+  // P45: PosApiHttpAdapter y GetSalesHistoryUseCase propagan AbortSignal y relanzan AbortError
+  // =========================================================================
+  it('P45: PosApiHttpAdapter y GetSalesHistoryUseCase propagan AbortSignal sin enmascarar AbortError como 503', async () => {
+    const adapter = new PosApiHttpAdapter('http://localhost:5000');
+    const useCase = new GetSalesHistoryUseCase(adapter);
+    const controller = new AbortController();
+    const originalFetch = global.fetch;
+
+    try {
+      const abortError = new DOMException('The operation was aborted.', 'AbortError');
+      const mockFetch = vi.fn().mockRejectedValue(abortError);
+      global.fetch = mockFetch;
+
+      await expect(useCase.execute(1, 5, 'esteban', 'ALL', controller.signal)).rejects.toMatchObject({
+        name: 'AbortError',
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('search=esteban'),
+        expect.objectContaining({ signal: controller.signal })
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });

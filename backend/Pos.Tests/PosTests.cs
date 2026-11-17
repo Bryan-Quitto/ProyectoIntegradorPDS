@@ -10,6 +10,8 @@ using Pos.Domain.Entities;
 using Pos.Domain.Exceptions;
 using Pos.Domain.Strategies;
 using Pos.Domain.ValueObjects;
+using Pos.Infrastructure;
+using Pos.Infrastructure.Persistence;
 using Xunit;
 
 namespace Pos.Tests;
@@ -1356,5 +1358,305 @@ public class PosTests
         result.State.Should().Be("Synced");
         result.OdooOrderReference.Should().Be("POS/2026/00999");
         await odooGateway.Received(1).SyncSaleOrderAsync(Arg.Any<SaleOrder>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    // =========================================================================
+    // P33: GetSalesPagedAsync con filtro ALL incluye nombre de sesión/caja e ID numérico de sesión
+    // =========================================================================
+    [Fact]
+    public async Task P33_SqliteSaleHistoryRepository_GetSalesPagedAsync_FiltersByAll_IncludesSessionAndBoxName()
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<Pos.Infrastructure.Persistence.PosDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using var dbContext = new Pos.Infrastructure.Persistence.PosDbContext(options);
+        await dbContext.Database.EnsureCreatedAsync();
+
+        var repo = new Pos.Infrastructure.Persistence.SqliteSaleHistoryRepository(dbContext);
+
+        var saleSession4 = new SaleOrderResponseDto(
+            Guid.Parse("a0000000-0000-0000-0000-000000000001"), 4, "1712345678", "Cliente Alfa", 10m, 0m, 1.5m, 11.5m, "Synced", "REF-001", 1,
+            DateTime.UtcNow, new List<SaleOrderLineDto>(), SessionName: "Caja Principal"
+        );
+        var saleSession5 = new SaleOrderResponseDto(
+            Guid.Parse("b0000000-0000-0000-0000-000000000002"), 5, "1799999999", "Cliente Beta", 20m, 0m, 3.0m, 23.0m, "Synced", "REF-002", 2,
+            DateTime.UtcNow, new List<SaleOrderLineDto>(), SessionName: "Furniture Shop"
+        );
+
+        await repo.SaveSaleAsync(saleSession4);
+        await repo.SaveSaleAsync(saleSession5);
+
+        // 1. Buscar por nombre de sesión (ej. "Furniture") con filter: "ALL"
+        var (byNameAll, countNameAll) = await repo.GetSalesPagedAsync(null, 1, 10, search: "Furniture", filter: "ALL");
+        byNameAll.Should().HaveCount(1);
+        byNameAll[0].PosSessionId.Should().Be(5);
+        countNameAll.Should().Be(1);
+
+        // 2. Buscar por nombre de sesión con filter: null (por defecto actúa como ALL)
+        var (byNameNull, countNameNull) = await repo.GetSalesPagedAsync(null, 1, 10, search: "Principal", filter: null);
+        byNameNull.Should().HaveCount(1);
+        byNameNull[0].PosSessionId.Should().Be(4);
+        countNameNull.Should().Be(1);
+
+        // 3. Buscar por ID numérico de sesión (ej. "4") con filter: "ALL"
+        var (byIdAll, countIdAll) = await repo.GetSalesPagedAsync(null, 1, 10, search: "4", filter: "ALL");
+        byIdAll.Should().HaveCount(1);
+        byIdAll[0].PosSessionId.Should().Be(4);
+        countIdAll.Should().Be(1);
+
+        // 4. Buscar por cliente bajo "ALL"
+        var (byCustomer, countCustomer) = await repo.GetSalesPagedAsync(null, 1, 10, search: "Alfa", filter: "ALL");
+        byCustomer.Should().HaveCount(1);
+        byCustomer[0].CustomerName.Should().Be("Cliente Alfa");
+        countCustomer.Should().Be(1);
+
+        // 5. Buscar por documento de cliente bajo "ALL"
+        var (byDoc, countDoc) = await repo.GetSalesPagedAsync(null, 1, 10, search: "1799999999", filter: "ALL");
+        byDoc.Should().HaveCount(1);
+        byDoc[0].CustomerName.Should().Be("Cliente Beta");
+        countDoc.Should().Be(1);
+
+        // 6. Buscar por referencia Odoo bajo "ALL"
+        var (byRef, countRef) = await repo.GetSalesPagedAsync(null, 1, 10, search: "REF-001", filter: "ALL");
+        byRef.Should().HaveCount(1);
+        byRef[0].OdooOrderReference.Should().Be("REF-001");
+        countRef.Should().Be(1);
+    }
+
+    // =========================================================================
+    // P34: FTS5 (trigram) soporta caracteres especiales ('/', '-', ':', '*', '"', '(', ')')
+    //      y preserva semántica exacta de prefijo para OrderId / CustomerDocument
+    // =========================================================================
+    [Fact]
+    public async Task P34_SqliteSaleHistoryRepository_Fts5Trigram_SearchesSpecialCharsAndPreservesPrefixSemantics()
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<PosDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using var dbContext = new PosDbContext(options);
+        dbContext.EnsurePosSchemaAndFtsInitialized();
+        // Verificar idempotencia de inicialización
+        dbContext.EnsurePosSchemaAndFtsInitialized();
+
+        var repo = new SqliteSaleHistoryRepository(dbContext);
+
+        var guid1 = Guid.Parse("11111111-aaaa-bbbb-cccc-000000000001");
+        var guid2 = Guid.Parse("22222222-dddd-eeee-ffff-000000000002");
+        var guid3 = Guid.Parse("33333333-4444-5555-6666-000000000003");
+
+        await repo.SaveSaleAsync(new SaleOrderResponseDto(
+            guid1, 7, "1712345678", "Jose Esteban Salazar", 10m, 0m, 1.5m, 11.5m, "Synced",
+            "260-1-000003", 1, DateTime.UtcNow.AddMinutes(-3), new List<SaleOrderLineDto>(),
+            SessionName: "Caja 3 - Esteban/00007"));
+
+        await repo.SaveSaleAsync(new SaleOrderResponseDto(
+            guid2, 4, "9999999999999", "Consumidor Final", 20m, 0m, 3.0m, 23.0m, "Synced",
+            "POS/2026-01:*(test)\"a", 2, DateTime.UtcNow.AddMinutes(-2), new List<SaleOrderLineDto>(),
+            SessionName: "POS/0001"));
+
+        await repo.SaveSaleAsync(new SaleOrderResponseDto(
+            guid3, 8, "0101712345", "Carlos Mendoza", 30m, 0m, 4.5m, 34.5m, "Synced",
+            "REF-999", 3, DateTime.UtcNow.AddMinutes(-1), new List<SaleOrderLineDto>(),
+            SessionName: "Caja - 3 / Principal"));
+
+        // 1. Búsqueda "esteban" (insensible a mayúsculas)
+        var (estebanItems, estebanCount) = await repo.GetSalesPagedAsync(null, 1, 10, search: "esteban", filter: "ALL");
+        estebanCount.Should().Be(1);
+        estebanItems.Should().ContainSingle(s => s.OrderId == guid1);
+
+        // 2. Búsqueda con '/' ("POS/0001") en ALL y SESSION
+        var (posItems, posCount) = await repo.GetSalesPagedAsync(null, 1, 10, search: "POS/0001", filter: "SESSION");
+        posCount.Should().Be(1);
+        posItems.Should().ContainSingle(s => s.OrderId == guid2);
+
+        // 3. Búsqueda con '-' ("Caja - 3") sin syntax error de FTS5
+        var (cajaItems, cajaCount) = await repo.GetSalesPagedAsync(null, 1, 10, search: "Caja - 3", filter: "SESSION");
+        cajaCount.Should().Be(1);
+        cajaItems.Should().ContainSingle(s => s.OrderId == guid3);
+
+        // 4. Búsqueda con caracteres especiales : * ( ) " / - sin syntax error
+        var (specialItems, specialCount) = await repo.GetSalesPagedAsync(null, 1, 10, search: ":*(test)\"a", filter: "REFERENCE");
+        specialCount.Should().Be(1);
+        specialItems.Should().ContainSingle(s => s.OrderId == guid2);
+
+        var (parenItems, parenCount) = await repo.GetSalesPagedAsync(null, 1, 10, search: "()*-/:\"", filter: "ALL");
+        parenCount.Should().Be(0);
+        parenItems.Should().BeEmpty();
+
+        // 5. Semántica de prefijo estricta para CustomerDocument y OrderId (sin falsos positivos en medio)
+        var (docPrefixItems, docPrefixCount) = await repo.GetSalesPagedAsync(null, 1, 10, search: "171", filter: "CUSTOMER");
+        docPrefixCount.Should().Be(1);
+        docPrefixItems.Should().ContainSingle(s => s.OrderId == guid1);
+
+        var (midGuidItems, midGuidCount) = await repo.GetSalesPagedAsync(null, 1, 10, search: "aaaa-bbbb", filter: "REFERENCE");
+        midGuidCount.Should().Be(0);
+        midGuidItems.Should().BeEmpty();
+
+        // 6. Término inexistente devuelve vacío inmediatamente
+        var (noneItems, noneCount) = await repo.GetSalesPagedAsync(null, 1, 10, search: "InexistenteXYZ", filter: "ALL");
+        noneCount.Should().Be(0);
+        noneItems.Should().BeEmpty();
+    }
+
+    // =========================================================================
+    // P35: Protección contra alta cardinalidad en FTS5 (>= 20,000 coincidencias)
+    //      evita materializar cientos de miles de rowids y pagina tanto en skip bajo como profundo
+    // =========================================================================
+    [Fact]
+    public async Task P35_SqliteSaleHistoryRepository_HighCardinality_HandlesOver20000RowsAccurately()
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<PosDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using var dbContext = new PosDbContext(options);
+        await dbContext.Database.EnsureCreatedAsync();
+
+        // Insertar 20,500 registros en transacción antes de inicializar FTS5 para probar rebuild
+        const int totalSeeded = 20_500;
+        var baseTime = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        using (var tx = connection.BeginTransaction())
+        using (var cmd = connection.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = """
+                INSERT INTO "SaleAuditRecords"
+                    ("OrderId", "PosSessionId", "SessionName", "OperatorName", "CustomerDocument", "CustomerName",
+                     "SubTotal", "DiscountAmount", "DiscountPolicyName", "TaxAmount", "TotalAmount",
+                     "PaymentMethod", "AmountPaid", "State", "OdooOrderReference", "OdooOrderId",
+                     "OrderLinesJson", "SyncedAtUtc")
+                VALUES
+                    (@orderId, 4, 'POS/0001', 'Cajero POS', '9999999999999', @customerName,
+                     '10.0', '0.0', 'Sin Descuento', '1.5', '11.5',
+                     'Efectivo', '11.5', 'Synced', @ref, @odooId,
+                     '[{"ProductId":1,"ProductName":"ItemPesado"}]', @syncedAt);
+                """;
+
+            var pOrderId = cmd.CreateParameter(); pOrderId.ParameterName = "@orderId"; cmd.Parameters.Add(pOrderId);
+            var pCustName = cmd.CreateParameter(); pCustName.ParameterName = "@customerName"; cmd.Parameters.Add(pCustName);
+            var pRef = cmd.CreateParameter(); pRef.ParameterName = "@ref"; cmd.Parameters.Add(pRef);
+            var pOdooId = cmd.CreateParameter(); pOdooId.ParameterName = "@odooId"; cmd.Parameters.Add(pOdooId);
+            var pSyncedAt = cmd.CreateParameter(); pSyncedAt.ParameterName = "@syncedAt"; cmd.Parameters.Add(pSyncedAt);
+
+            for (var i = 1; i <= totalSeeded; i++)
+            {
+                pOrderId.Value = Guid.NewGuid().ToString().ToUpperInvariant();
+                pCustName.Value = i == 42 ? "Cliente Especial Esteban" : $"Cliente Generico {i}";
+                pRef.Value = $"POS-{i:D6}";
+                pOdooId.Value = i;
+                pSyncedAt.Value = baseTime.AddSeconds(i).ToString("yyyy-MM-dd HH:mm:ss");
+                cmd.ExecuteNonQuery();
+            }
+
+            tx.Commit();
+        }
+
+        // Rebuild inicial de FTS5 + verificación idempotente
+        dbContext.EnsurePosSchemaAndFtsInitialized();
+        dbContext.EnsurePosSchemaAndFtsInitialized();
+
+        var repo = new SqliteSaleHistoryRepository(dbContext);
+
+        // 1. Alta cardinalidad con skip bajo (página 1): usa IX_SaleAuditRecords_SyncedAtUtc
+        var (topPage, topCount) = await repo.GetSalesPagedAsync(null, page: 1, pageSize: 5, search: "POS/0001", filter: "ALL");
+        topCount.Should().Be(totalSeeded);
+        topPage.Should().HaveCount(5);
+        topPage[0].OdooOrderReference.Should().Be($"POS-{totalSeeded:D6}");
+        topPage[4].OdooOrderReference.Should().Be($"POS-{totalSeeded - 4:D6}");
+        topPage.Should().OnlyContain(s => s.Lines.Count == 0);
+
+        // 2. Alta cardinalidad con skip profundo (page=2500, pageSize=5 => skip=12,495 >= 10,000)
+        var (deepPage, deepCount) = await repo.GetSalesPagedAsync(null, page: 2500, pageSize: 5, search: "Cliente", filter: "CUSTOMER");
+        deepCount.Should().Be(totalSeeded);
+        deepPage.Should().HaveCount(5);
+        deepPage[0].OdooOrderReference.Should().Be($"POS-{totalSeeded - 12495:D6}");
+
+        // 3. Búsqueda específica en medio de 20,500 filas (baja cardinalidad FTS5)
+        var (singlePage, singleCount) = await repo.GetSalesPagedAsync(null, page: 1, pageSize: 5, search: "Esteban", filter: "CUSTOMER");
+        singleCount.Should().Be(1);
+        singlePage.Should().ContainSingle(s => s.OdooOrderReference == "POS-000042");
+    }
+
+    // =========================================================================
+    // P36: Fallback seguro para términos < 3 caracteres e interceptor de PRAGMAs SQLite
+    // =========================================================================
+    [Fact]
+    public async Task P36_SqliteSaleHistoryRepository_ShortTermFallback_And_PragmaInterceptor()
+    {
+        var tempDbPath = Path.Combine(Path.GetTempPath(), $"pos_p36_{Guid.NewGuid():N}.db");
+        try
+        {
+            var options = new DbContextOptionsBuilder<PosDbContext>()
+                .UseSqlite($"Data Source={tempDbPath}")
+                .AddInterceptors(SqlitePragmaConnectionInterceptor.Instance)
+                .Options;
+
+            using var dbContext = new PosDbContext(options);
+            dbContext.EnsurePosSchemaAndFtsInitialized();
+
+            // Verificar PRAGMAs aplicados por SqlitePragmaConnectionInterceptor al abrir EF Core la conexión
+            var connection = dbContext.Database.GetDbConnection();
+            await connection.OpenAsync();
+            try
+            {
+                using var pragmaCmd = connection.CreateCommand();
+                pragmaCmd.CommandText = "PRAGMA cache_size;";
+                Convert.ToInt64(pragmaCmd.ExecuteScalar()).Should().Be(-24576);
+
+                pragmaCmd.CommandText = "PRAGMA temp_store;";
+                Convert.ToInt64(pragmaCmd.ExecuteScalar()).Should().Be(2); // MEMORY
+
+                pragmaCmd.CommandText = "PRAGMA synchronous;";
+                Convert.ToInt64(pragmaCmd.ExecuteScalar()).Should().Be(1); // NORMAL
+            }
+            finally
+            {
+                await connection.CloseAsync();
+            }
+
+            var repo = new SqliteSaleHistoryRepository(dbContext);
+            await repo.SaveSaleAsync(new SaleOrderResponseDto(
+                Guid.NewGuid(), 4, "1712345678", "Ana Maria", 10m, 0m, 1.5m, 11.5m, "Synced",
+                "260-1-000001", 1, DateTime.UtcNow.AddMinutes(-1), new List<SaleOrderLineDto>(),
+                SessionName: "POS/0001"));
+            await repo.SaveSaleAsync(new SaleOrderResponseDto(
+                Guid.NewGuid(), 9, "0998765432", "Luis Torres", 15m, 0m, 2.25m, 17.25m, "Synced",
+                "260-2-000002", 2, DateTime.UtcNow, new List<SaleOrderLineDto>(),
+                SessionName: "Caja 9"));
+
+            // Término < 3 caracteres ("17"): fallback seguro con prefijo en CustomerDocument
+            var (byDocPrefix, docCount) = await repo.GetSalesPagedAsync(null, 1, 10, search: "17", filter: "CUSTOMER");
+            docCount.Should().Be(1);
+            byDocPrefix.Should().ContainSingle(s => s.CustomerName == "Ana Maria");
+
+            // Término < 3 caracteres ("9"): coincide con PosSessionId == 9 en SESSION
+            var (bySessionId, sessionCount) = await repo.GetSalesPagedAsync(null, 1, 10, search: "9", filter: "SESSION");
+            sessionCount.Should().Be(1);
+            bySessionId.Should().ContainSingle(s => s.PosSessionId == 9);
+
+            // Término < 3 caracteres sin coincidencias ("zz"): retorna vacío sin error
+            var (noMatch, noMatchCount) = await repo.GetSalesPagedAsync(null, 1, 10, search: "zz", filter: "ALL");
+            noMatchCount.Should().Be(0);
+            noMatch.Should().BeEmpty();
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (File.Exists(tempDbPath))
+            {
+                File.Delete(tempDbPath);
+            }
+        }
     }
 }

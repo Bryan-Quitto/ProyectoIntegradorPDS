@@ -57,7 +57,8 @@ public static class DependencyInjection
 
         services.AddDbContext<PosDbContext>(options =>
         {
-            options.UseSqlite(connectionString);
+            options.UseSqlite(connectionString)
+                   .AddInterceptors(SqlitePragmaConnectionInterceptor.Instance);
         });
 
         // 4. Gateways & Repositories

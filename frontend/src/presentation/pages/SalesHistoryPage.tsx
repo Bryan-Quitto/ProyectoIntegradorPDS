@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useSalesHistory } from '../hooks/useSalesHistory';
 import { useSaleDetail } from '../hooks/useSaleDetail';
@@ -78,9 +78,19 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
   // Búsqueda con debounce para alto rendimiento con 1M+ registros
   const debouncedSearch = useDebounce(searchTerm, 350);
 
+  // Evita doble petición HTTP cuando currentPage > 1 y cambian debouncedSearch o filterType:
+  // si el criterio cambió respecto al último aplicado, se usa página 1 inmediatamente en este mismo render.
+  const [appliedCriteria, setAppliedCriteria] = useState({
+    search: debouncedSearch,
+    filter: filterType,
+  });
+  const criteriaChanged =
+    appliedCriteria.search !== debouncedSearch || appliedCriteria.filter !== filterType;
+  const effectivePage = criteriaChanged ? 1 : currentPage;
+
   // Hook de historial conectado a paginación y búsqueda del servidor SQLite
   const { sales, totalCount, loading, error, refresh } = useSalesHistory(
-    currentPage,
+    effectivePage,
     PAGE_SIZE,
     debouncedSearch,
     filterType
@@ -111,26 +121,24 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
     if (filterType !== 'ALL') {
       params.filtro = filterType;
     }
-    if (currentPage > 1) {
-      params.pagina = String(currentPage);
+    if (effectivePage > 1) {
+      params.pagina = String(effectivePage);
     }
     if (queryDetail) {
       params.detalle = queryDetail;
     }
     setSearchParams(params, { replace: true });
-  }, [searchTerm, filterType, currentPage, queryDetail, setSearchParams]);
+  }, [searchTerm, filterType, effectivePage, queryDetail, setSearchParams]);
 
-  // Reset de página al cambiar término de búsqueda o tipo de filtro
-  const prevFilterRef = useRef({ search: debouncedSearch, filter: filterType });
+  // Sincronizar estado de criterios aplicados y resetear página a 1 sin disparar doble petición
   useEffect(() => {
-    if (
-      prevFilterRef.current.search !== debouncedSearch ||
-      prevFilterRef.current.filter !== filterType
-    ) {
-      prevFilterRef.current = { search: debouncedSearch, filter: filterType };
-      setCurrentPage(1);
+    if (criteriaChanged) {
+      setAppliedCriteria({ search: debouncedSearch, filter: filterType });
+      if (currentPage !== 1) {
+        setCurrentPage(1);
+      }
     }
-  }, [debouncedSearch, filterType]);
+  }, [criteriaChanged, debouncedSearch, filterType, currentPage]);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
   const pagedSales = sales;
@@ -172,7 +180,9 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
         return 'Buscar por caja o sesión (ej. Caja #4, Shop/0001, 4)...';
       case 'ALL':
       default:
-        return 'Buscar por referencia Odoo, cliente, cédula o ID local...';
+        return isAdmin
+          ? 'Buscar por referencia Odoo, cliente, cédula, caja o ID local...'
+          : 'Buscar por referencia Odoo, cliente, cédula o ID local...';
     }
   };
 
@@ -497,7 +507,7 @@ export const SalesHistoryPage: React.FC<SalesHistoryPageProps> = ({ onBackToTerm
             {/* Controles de Paginación del Historial */}
             {!loading && !error && totalCount > 0 && (
               <Pagination
-                currentPage={currentPage}
+                currentPage={effectivePage}
                 totalPages={totalPages}
                 totalCount={totalCount}
                 pageSize={PAGE_SIZE}

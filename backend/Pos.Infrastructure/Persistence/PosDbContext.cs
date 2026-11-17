@@ -28,6 +28,9 @@ public class PosDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.OrderId).IsUnique();
+            entity.HasIndex(e => e.SyncedAtUtc).IsDescending();
+            entity.HasIndex(e => new { e.PosSessionId, e.SyncedAtUtc }).IsDescending(false, true);
+            entity.HasIndex(e => e.CustomerDocument);
         });
 
         modelBuilder.Entity<LocalOperator>(entity =>

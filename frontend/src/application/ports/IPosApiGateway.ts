@@ -103,6 +103,6 @@ export interface IPosApiGateway {
   getCustomers(search?: string, page?: number, pageSize?: number, criteria?: string): Promise<Customer[]>;
   getActiveSession(): Promise<PosSession | null>;
   createSale(request: CreateSaleRequest): Promise<SaleOrderResult>;
-  getSalesHistory(page?: number, pageSize?: number, search?: string, filter?: string): Promise<SaleOrderResult[]>;
+  getSalesHistory(page?: number, pageSize?: number, search?: string, filter?: string, signal?: AbortSignal): Promise<SaleOrderResult[]>;
   getSaleById(id: string): Promise<SaleOrderDetailDto | null>;
 }

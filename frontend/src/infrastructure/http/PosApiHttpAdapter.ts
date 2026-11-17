@@ -69,6 +69,12 @@ export class PosApiHttpAdapter implements IPosApiGateway {
       return await fetch(url.toString(), init);
     } catch (err: unknown) {
       if (
+        (err instanceof Error && err.name === 'AbortError') ||
+        (typeof DOMException !== 'undefined' && err instanceof DOMException && err.name === 'AbortError')
+      ) {
+        throw err;
+      }
+      if (
         err instanceof TypeError ||
         (err instanceof Error &&
           (err.message.toLowerCase().includes('fetch') ||
@@ -256,7 +262,8 @@ export class PosApiHttpAdapter implements IPosApiGateway {
     page = 1,
     pageSize = 5,
     search?: string,
-    filter?: string
+    filter?: string,
+    signal?: AbortSignal
   ): Promise<SaleOrderResult[]> {
     const params = new URLSearchParams();
     if (page) params.append('page', String(page));
@@ -271,6 +278,7 @@ export class PosApiHttpAdapter implements IPosApiGateway {
         Accept: 'application/json',
         ...this.getAuthHeader(),
       },
+      ...(signal ? { signal } : {}),
     });
 
     const totalCountHeader = response.headers.get('x-total-count') || response.headers.get('X-Total-Count');
