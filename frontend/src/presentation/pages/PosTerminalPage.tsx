@@ -242,6 +242,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [productModalOpen, setProductModalOpen] = useState(false);
+  const [orderSequence, setOrderSequence] = useState(0);
   const [replacingItem, setReplacingItem] = useState<CartItem | null>(null);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
 
@@ -441,6 +442,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
     setCartProductsMap(new Map());
     resetCheckoutSession();
     setPaymentModalOpen(false);
+    setOrderSequence((prev) => prev + 1);
   };
 
   const handleConfirmReset = () => {
@@ -448,6 +450,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
     applyDiscount('NONE', 0);
     setSelectedCustomer(null);
     setShowResetConfirm(false);
+    setOrderSequence((prev) => prev + 1);
   };
 
   // [SHIFT-LEFT VALIDATION PRE-FLIGHT]: Validación en caliente contra Odoo antes de abrir el modal de cobro
@@ -1387,6 +1390,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
 
       {/* Modal Dedicado de Selección de Clientes Odoo (Punto 5 y 6) */}
       <CustomerSelectorModal
+        key={`customer-modal-${orderSequence}`}
         open={customerModalOpen}
         onOpenChange={setCustomerModalOpen}
         onSelectCustomer={setSelectedCustomer}
@@ -1395,6 +1399,7 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
 
       {/* Modal Dedicado de Búsqueda de Productos (Puntos 1 y 6) */}
       <ProductSelectorModal
+        key={`product-modal-${orderSequence}`}
         open={productModalOpen}
         onOpenChange={(open) => {
           setProductModalOpen(open);
