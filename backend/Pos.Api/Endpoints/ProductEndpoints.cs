@@ -43,6 +43,7 @@ public static class ProductEndpoints
                     ct);
 
                 httpContext.Response.Headers["X-Total-Count"] = totalCount.ToString();
+                httpContext.Response.Headers.AccessControlExposeHeaders = "X-Total-Count";
                 return Results.Ok(products);
             }
 

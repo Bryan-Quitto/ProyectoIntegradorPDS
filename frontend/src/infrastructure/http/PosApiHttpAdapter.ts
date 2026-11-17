@@ -106,7 +106,14 @@ export class PosApiHttpAdapter implements IPosApiGateway {
     return await this.handleResponse<LoginResponse>(response);
   }
 
-  public async getProducts(search?: string, page?: number, pageSize?: number, criteria?: string, onlyInStock?: boolean): Promise<Product[]> {
+  public async getProducts(
+    search?: string,
+    page?: number,
+    pageSize?: number,
+    criteria?: string,
+    onlyInStock?: boolean,
+    signal?: AbortSignal
+  ): Promise<Product[]> {
     const url = new URL(`${this._baseUrl}/api/products`);
     if (search?.trim()) {
       url.searchParams.set('search', search.trim());
@@ -130,6 +137,7 @@ export class PosApiHttpAdapter implements IPosApiGateway {
         Accept: 'application/json',
         ...this.getAuthHeader(),
       },
+      ...(signal ? { signal } : {}),
     });
 
     const totalCountHeader = response.headers.get('x-total-count') || response.headers.get('X-Total-Count');

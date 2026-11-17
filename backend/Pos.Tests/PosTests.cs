@@ -1659,4 +1659,224 @@ public class PosTests
             }
         }
     }
+
+    // =========================================================================
+    // P37: OdooJson2PosAdapter - Búsqueda dividida indexada para filtro "ALL"
+    // =========================================================================
+    [Fact]
+    public async Task P37_OdooJson2PosAdapter_AllCriteria_ZeroMatches_ReturnsEmptyWithoutSearchRead()
+    {
+        var recordedCalls = new System.Collections.Concurrent.ConcurrentBag<(string Path, string Body)>();
+        var handler = new MockOdooHttpMessageHandler((path, body) =>
+        {
+            recordedCalls.Add((path, body));
+            if (path.EndsWith("/product.product/search_count", StringComparison.Ordinal))
+            {
+                return "0";
+            }
+            throw new InvalidOperationException($"Llamada inesperada: {path}");
+        });
+
+        var adapter = CreateOdooAdapter(handler);
+        var (items, totalCount) = await adapter.SearchProductsPagedAsync("inexistente", page: 1, pageSize: 8, criteria: "ALL");
+
+        items.Should().BeEmpty();
+        totalCount.Should().Be(0);
+        recordedCalls.Should().HaveCount(2); // Solo nameDomain + codeDomain search_count
+        recordedCalls.Should().OnlyContain(c => c.Path.EndsWith("/search_count", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task P37_B_OdooJson2PosAdapter_AllCriteria_NameOnlyMatch_ReadsDirectlyWithoutIdUnion()
+    {
+        var recordedCalls = new System.Collections.Concurrent.ConcurrentBag<(string Path, string Body)>();
+        var handler = new MockOdooHttpMessageHandler((path, body) =>
+        {
+            recordedCalls.Add((path, body));
+            if (path.EndsWith("/product.product/search_count", StringComparison.Ordinal))
+            {
+                return body.Contains("\"name\"", StringComparison.Ordinal) ? "1" : "0";
+            }
+            if (path.EndsWith("/product.product/search_read", StringComparison.Ordinal))
+            {
+                return """
+                    [
+                      {
+                        "id": 7,
+                        "name": "Comestibles",
+                        "default_code": false,
+                        "lst_price": 5.50,
+                        "barcode": false,
+                        "qty_available": 25.0,
+                        "taxes_id": []
+                      }
+                    ]
+                    """;
+            }
+            throw new InvalidOperationException($"Llamada inesperada: {path}");
+        });
+
+        var adapter = CreateOdooAdapter(handler);
+        var (items, totalCount) = await adapter.SearchProductsPagedAsync("comestibles", page: 1, pageSize: 8, criteria: "ALL");
+
+        totalCount.Should().Be(1);
+        items.Should().ContainSingle(p => p.Id == 7 && p.Name == "Comestibles");
+        recordedCalls.Should().NotContain(c => c.Path.EndsWith("/product.product/search", StringComparison.Ordinal));
+        recordedCalls.Count(c => c.Path.EndsWith("/product.product/search_read", StringComparison.Ordinal)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task P37_C_OdooJson2PosAdapter_AllCriteria_CodeOnlyMatch_ReadsDirectlyWithoutIdUnion()
+    {
+        var recordedCalls = new System.Collections.Concurrent.ConcurrentBag<(string Path, string Body)>();
+        var handler = new MockOdooHttpMessageHandler((path, body) =>
+        {
+            recordedCalls.Add((path, body));
+            if (path.EndsWith("/product.product/search_count", StringComparison.Ordinal))
+            {
+                return body.Contains("\"default_code\"", StringComparison.Ordinal) ? "1" : "0";
+            }
+            if (path.EndsWith("/product.product/search_read", StringComparison.Ordinal))
+            {
+                return """
+                    [
+                      {
+                        "id": 55,
+                        "name": "Teclado Mecánico",
+                        "default_code": "SKU-55",
+                        "lst_price": 45.00,
+                        "barcode": "7860055",
+                        "qty_available": 10.0,
+                        "taxes_id": []
+                      }
+                    ]
+                    """;
+            }
+            throw new InvalidOperationException($"Llamada inesperada: {path}");
+        });
+
+        var adapter = CreateOdooAdapter(handler);
+        var (items, totalCount) = await adapter.SearchProductsPagedAsync("SKU-55", page: 1, pageSize: 8, criteria: "ALL");
+
+        totalCount.Should().Be(1);
+        items.Should().ContainSingle(p => p.Id == 55 && p.DefaultCode == "SKU-55");
+        recordedCalls.Should().NotContain(c => c.Path.EndsWith("/product.product/search", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task P37_D_OdooJson2PosAdapter_AllCriteria_MultipleBranchesMatch_DeduplicatesUnionAndPaginates()
+    {
+        var recordedCalls = new System.Collections.Concurrent.ConcurrentBag<(string Path, string Body)>();
+        var handler = new MockOdooHttpMessageHandler((path, body) =>
+        {
+            recordedCalls.Add((path, body));
+            if (path.EndsWith("/product.product/search_count", StringComparison.Ordinal))
+            {
+                if (body.Contains("\"name\"", StringComparison.Ordinal)) return "2";
+                if (body.Contains("\"default_code\"", StringComparison.Ordinal)) return "2";
+                if (body.Contains("\"id\"", StringComparison.Ordinal)) return "1";
+                return "0";
+            }
+            if (path.EndsWith("/product.product/search", StringComparison.Ordinal))
+            {
+                if (body.Contains("\"name\"", StringComparison.Ordinal)) return "[42, 100]";
+                if (body.Contains("\"default_code\"", StringComparison.Ordinal)) return "[42, 50]";
+                if (body.Contains("\"id\"", StringComparison.Ordinal)) return "[42]";
+                return "[]";
+            }
+            if (path.EndsWith("/product.product/search_read", StringComparison.Ordinal))
+            {
+                // Página 1 con pageSize=2 debe pedir [42, 50]
+                body.Should().Contain("42");
+                body.Should().Contain("50");
+                body.Should().NotContain("100");
+                return """
+                    [
+                      { "id": 50, "name": "Cable 42", "default_code": "C-42", "lst_price": 3.0, "barcode": false, "qty_available": 4.0, "taxes_id": [] },
+                      { "id": 42, "name": "Producto 42", "default_code": "42-A", "lst_price": 9.0, "barcode": false, "qty_available": 8.0, "taxes_id": [] }
+                    ]
+                    """;
+            }
+            throw new InvalidOperationException($"Llamada inesperada: {path}");
+        });
+
+        var adapter = CreateOdooAdapter(handler);
+        var (items, totalCount) = await adapter.SearchProductsPagedAsync("42", page: 1, pageSize: 2, criteria: "ALL");
+
+        totalCount.Should().Be(3); // Unión sin duplicados de {42, 50, 100}
+        items.Select(i => i.Id).Should().Equal(42, 50);
+    }
+
+    [Fact]
+    public async Task P37_E_OdooJson2PosAdapter_AllCriteria_HighCardinality_FallsBackToStandardDomain()
+    {
+        var recordedCalls = new System.Collections.Concurrent.ConcurrentBag<(string Path, string Body)>();
+        var handler = new MockOdooHttpMessageHandler((path, body) =>
+        {
+            recordedCalls.Add((path, body));
+            if (path.EndsWith("/product.product/search_count", StringComparison.Ordinal))
+            {
+                // Primeros conteos divididos: name > 5000 y code > 0; luego el fallback devuelve 6000
+                if (body.Contains("\"name\"", StringComparison.Ordinal) && body.Contains("\"default_code\"", StringComparison.Ordinal))
+                    return "6000";
+                if (body.Contains("\"name\"", StringComparison.Ordinal))
+                    return "6000";
+                if (body.Contains("\"default_code\"", StringComparison.Ordinal))
+                    return "10";
+                return "0";
+            }
+            if (path.EndsWith("/product.product/search_read", StringComparison.Ordinal))
+            {
+                return """
+                    [
+                      { "id": 1, "name": "Producto 1", "default_code": "P1", "lst_price": 1.0, "barcode": false, "qty_available": 5.0, "taxes_id": [] }
+                    ]
+                    """;
+            }
+            throw new InvalidOperationException($"Llamada inesperada: {path}");
+        });
+
+        var adapter = CreateOdooAdapter(handler);
+        var (items, totalCount) = await adapter.SearchProductsPagedAsync("Producto", page: 1, pageSize: 8, criteria: "ALL");
+
+        totalCount.Should().Be(6000);
+        items.Should().ContainSingle(p => p.Id == 1);
+        recordedCalls.Should().NotContain(c => c.Path.EndsWith("/product.product/search", StringComparison.Ordinal));
+    }
+
+    private static Pos.Infrastructure.Odoo.OdooJson2PosAdapter CreateOdooAdapter(HttpMessageHandler handler)
+    {
+        var httpClient = new HttpClient(handler);
+        var options = Microsoft.Extensions.Options.Options.Create(new Pos.Infrastructure.Odoo.OdooOptions
+        {
+            BaseUrl = "http://localhost:8069",
+            Database = "odoo_test",
+            ApiKey = "test-api-key"
+        });
+        var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger<Pos.Infrastructure.Odoo.OdooJson2PosAdapter>.Instance;
+        return new Pos.Infrastructure.Odoo.OdooJson2PosAdapter(httpClient, options, logger);
+    }
+
+    private sealed class MockOdooHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly Func<string, string, string> _responder;
+
+        public MockOdooHttpMessageHandler(Func<string, string, string> responder)
+        {
+            _responder = responder;
+        }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var body = request.Content is not null
+                ? await request.Content.ReadAsStringAsync(cancellationToken)
+                : string.Empty;
+            var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+            var json = _responder(path, body);
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
+            };
+        }
+    }
 }

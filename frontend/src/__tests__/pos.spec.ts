@@ -1203,4 +1203,37 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
       global.fetch = originalFetch;
     }
   });
+
+  // =========================================================================
+  // P46: PosApiHttpAdapter y SearchCatalogUseCase propagan AbortSignal en getProducts y relanzan AbortError
+  // =========================================================================
+  it('P46: PosApiHttpAdapter y SearchCatalogUseCase propagan AbortSignal en getProducts sin enmascarar AbortError como 503', async () => {
+    const adapter = new PosApiHttpAdapter('http://localhost:5000');
+    const useCase = new SearchCatalogUseCase(adapter);
+    const controller = new AbortController();
+    const originalFetch = global.fetch;
+
+    try {
+      const abortError = new DOMException('The operation was aborted.', 'AbortError');
+      const mockFetch = vi.fn().mockRejectedValue(abortError);
+      global.fetch = mockFetch;
+
+      await expect(
+        useCase.execute('comestibles', 1, 8, 'ALL', false, controller.signal)
+      ).rejects.toMatchObject({
+        name: 'AbortError',
+      });
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('search=comestibles'),
+        expect.objectContaining({ signal: controller.signal })
+      );
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('criteria=ALL'),
+        expect.anything()
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });

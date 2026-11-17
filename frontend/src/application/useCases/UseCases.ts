@@ -67,14 +67,16 @@ export class SearchCatalogUseCase {
     page?: number,
     pageSize?: number,
     criteria?: string,
-    onlyInStock?: boolean
+    onlyInStock?: boolean,
+    signal?: AbortSignal
   ): Promise<Product[]>;
   public async execute(
     query?: string,
     page?: number,
     pageSize?: number,
     criteria?: string,
-    onlyInStock?: boolean
+    onlyInStock?: boolean,
+    signal?: AbortSignal
   ): Promise<Product[]>;
   public async execute(
     queryOrGateway?: string | IPosApiGateway,
@@ -82,14 +84,19 @@ export class SearchCatalogUseCase {
     pageOrPageSize?: number,
     pageSizeOrCriteria?: number | string,
     criteriaOrOnlyInStock?: string | boolean,
-    onlyInStockParam?: boolean
+    onlyInStockOrSignal?: boolean | AbortSignal,
+    signalParam?: AbortSignal
   ): Promise<Product[]> {
     if (queryOrGateway && typeof queryOrGateway === 'object' && 'getProducts' in queryOrGateway) {
       const q = typeof queryOrPage === 'string' ? queryOrPage : undefined;
       const p = typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined;
       const ps = typeof pageSizeOrCriteria === 'number' ? pageSizeOrCriteria : undefined;
       const crit = typeof criteriaOrOnlyInStock === 'string' ? criteriaOrOnlyInStock : undefined;
-      const stock = typeof onlyInStockParam === 'boolean' ? onlyInStockParam : undefined;
+      const stock = typeof onlyInStockOrSignal === 'boolean' ? onlyInStockOrSignal : undefined;
+      const sig = signalParam;
+      if (sig !== undefined) {
+        return await queryOrGateway.getProducts(q, p, ps, crit, stock, sig);
+      }
       if (stock !== undefined) {
         return await queryOrGateway.getProducts(q, p, ps, crit, stock);
       }
@@ -109,7 +116,14 @@ export class SearchCatalogUseCase {
     const ps = typeof pageOrPageSize === 'number' ? pageOrPageSize : undefined;
     const crit = typeof pageSizeOrCriteria === 'string' ? pageSizeOrCriteria : undefined;
     const stock = typeof criteriaOrOnlyInStock === 'boolean' ? criteriaOrOnlyInStock : undefined;
+    const sig =
+      onlyInStockOrSignal && typeof onlyInStockOrSignal === 'object' && 'aborted' in onlyInStockOrSignal
+        ? onlyInStockOrSignal
+        : undefined;
 
+    if (sig !== undefined) {
+      return await gateway.getProducts(q, p, ps, crit, stock, sig);
+    }
     if (stock !== undefined) {
       return await gateway.getProducts(q, p, ps, crit, stock);
     }

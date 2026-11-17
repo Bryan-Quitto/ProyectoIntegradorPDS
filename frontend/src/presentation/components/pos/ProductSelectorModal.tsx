@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Plus, Check, AlertCircle, Package, X, CheckCircle2, ArrowLeftRight } from 'lucide-react';
 import { Product } from '@/domain/Product';
 import { useProducts } from '@/presentation/hooks/useProducts';
@@ -42,32 +42,41 @@ export const ProductSelectorModal: React.FC<ProductSelectorModalProps> = ({
 
   const debouncedSearchTerm = useDebounce(searchTerm, 350);
 
+  // Evita doble petición HTTP cuando pageNumber > 1 y cambian filtros o búsqueda:
+  // si el criterio cambió respecto al último aplicado, se usa página 1 inmediatamente en este mismo render.
+  const [appliedCriteria, setAppliedCriteria] = useState({
+    search: debouncedSearchTerm,
+    criteria: searchCriteria,
+    inStock: onlyInStock,
+  });
+  const criteriaChanged =
+    appliedCriteria.search !== debouncedSearchTerm ||
+    appliedCriteria.criteria !== searchCriteria ||
+    appliedCriteria.inStock !== onlyInStock;
+  const effectivePage = criteriaChanged ? 1 : pageNumber;
+
   // Consulta paginada del lado del servidor para soportar 1,000,000+ de productos en Odoo
   const {
     products: serverProducts,
     totalCount: serverTotalCount,
     loading: serverLoading,
+    error: serverError,
     refresh,
-  } = useProducts(debouncedSearchTerm, pageNumber, pageSize, searchCriteria, onlyInStock);
+  } = useProducts(debouncedSearchTerm, effectivePage, pageSize, searchCriteria, onlyInStock, open);
 
-  const prevFilterRef = useRef({ search: debouncedSearchTerm, criteria: searchCriteria, inStock: onlyInStock });
   useEffect(() => {
-    if (
-      prevFilterRef.current.search !== debouncedSearchTerm ||
-      prevFilterRef.current.criteria !== searchCriteria ||
-      prevFilterRef.current.inStock !== onlyInStock
-    ) {
-      prevFilterRef.current = { search: debouncedSearchTerm, criteria: searchCriteria, inStock: onlyInStock };
-      setPageNumber(1);
+    if (criteriaChanged) {
+      setAppliedCriteria({
+        search: debouncedSearchTerm,
+        criteria: searchCriteria,
+        inStock: onlyInStock,
+      });
+      if (pageNumber !== 1) {
+        setPageNumber(1);
+      }
       setStockError(null);
     }
-  }, [debouncedSearchTerm, searchCriteria, onlyInStock]);
-
-  useEffect(() => {
-    if (open) {
-      void refresh(debouncedSearchTerm, pageNumber, pageSize, searchCriteria, onlyInStock);
-    }
-  }, [open, debouncedSearchTerm, pageNumber, pageSize, searchCriteria, onlyInStock, refresh]);
+  }, [criteriaChanged, debouncedSearchTerm, searchCriteria, onlyInStock, pageNumber]);
 
   const effectiveProducts = serverProducts;
   const totalCount = serverTotalCount;
@@ -139,6 +148,28 @@ export const ProductSelectorModal: React.FC<ProductSelectorModalProps> = ({
       className="max-w-4xl"
     >
       <div className="space-y-4 pt-1">
+        {/* Banner de Error de Red / Odoo */}
+        {serverError && (
+          <div
+            role="alert"
+            className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-xs flex items-center justify-between gap-2 shadow-xs"
+          >
+            <div className="flex items-center space-x-2">
+              <AlertCircle className="h-4 w-4 text-red-600 shrink-0" />
+              <span className="font-medium">{serverError}</span>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void refresh(debouncedSearchTerm, effectivePage, pageSize, searchCriteria, onlyInStock)}
+              className="h-7 px-2 text-xs text-red-700 hover:text-red-900 hover:bg-red-100 shrink-0"
+            >
+              Reintentar
+            </Button>
+          </div>
+        )}
+
         {/* Banner de Stock Error (RN-03) */}
         {stockError && (
           <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center justify-between gap-2 shadow-xs">
@@ -227,6 +258,10 @@ export const ProductSelectorModal: React.FC<ProductSelectorModalProps> = ({
             <div className="p-8 text-center text-slate-500">
               <Package className="h-8 w-8 mx-auto text-emerald-600 animate-spin mb-2" />
               <span>Cargando catálogo desde Odoo 20...</span>
+            </div>
+          ) : serverError && pagedProducts.length === 0 ? (
+            <div className="p-8 text-center text-red-600 text-sm">
+              No se pudo cargar el catálogo desde Odoo. Revise el mensaje de error superior e intente nuevamente.
             </div>
           ) : pagedProducts.length === 0 ? (
             <div className="p-8 text-center text-slate-400">
@@ -348,7 +383,7 @@ export const ProductSelectorModal: React.FC<ProductSelectorModalProps> = ({
           {/* Pagination */}
           {!isEffectiveLoading && totalCount > 0 && (
             <Pagination
-              currentPage={pageNumber}
+              currentPage={effectivePage}
               totalPages={totalPages}
               totalCount={totalCount}
               pageSize={pageSize}

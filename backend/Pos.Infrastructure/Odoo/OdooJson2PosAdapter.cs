@@ -43,7 +43,7 @@ public class OdooJson2PosAdapter : IOdooPosGateway
     // Catálogo (RF-01, RF-02, RN-03)
     // ------------------------------------------------------------------
 
-    private static List<object> BuildProductDomain(string query, string? criteria = null, bool onlyInStock = false)
+    private static List<object> BuildBaseProductDomain(bool onlyInStock = false)
     {
         var domain = new List<object>
         {
@@ -55,6 +55,13 @@ public class OdooJson2PosAdapter : IOdooPosGateway
         {
             domain.Add(new object[] { "qty_available", ">", 0 });
         }
+
+        return domain;
+    }
+
+    private static List<object> BuildProductDomain(string query, string? criteria = null, bool onlyInStock = false)
+    {
+        var domain = BuildBaseProductDomain(onlyInStock);
 
         if (string.IsNullOrWhiteSpace(query))
         {
@@ -125,18 +132,137 @@ public class OdooJson2PosAdapter : IOdooPosGateway
         bool onlyInStock = false,
         CancellationToken cancellationToken = default)
     {
-        var domain = BuildProductDomain(query, criteria, onlyInStock);
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
         var offset = (page - 1) * pageSize;
 
-        var countNode = await CallAsync("product.product", "search_count", new { domain }, cancellationToken);
-        var totalCount = countNode is JsonValue v && v.TryGetValue<int>(out var c)
+        var crit = criteria?.Trim().ToUpperInvariant();
+        var isGeneralSearch = !string.IsNullOrWhiteSpace(query) && (string.IsNullOrEmpty(crit) || crit == "ALL");
+
+        if (!isGeneralSearch)
+        {
+            var domain = BuildProductDomain(query, criteria, onlyInStock);
+            var totalCount = await CountProductsAsync(domain, cancellationToken);
+            var items = await ReadProductsAsync(domain, limit: pageSize, offset: offset, ct: cancellationToken);
+            return (items, totalCount);
+        }
+
+        return await SearchProductsAllIndexedAsync(query.Trim(), pageSize, offset, onlyInStock, cancellationToken);
+    }
+
+    private async Task<(IReadOnlyList<ProductDto> Items, int TotalCount)> SearchProductsAllIndexedAsync(
+        string q,
+        int pageSize,
+        int offset,
+        bool onlyInStock,
+        CancellationToken ct)
+    {
+        var baseDomain = BuildBaseProductDomain(onlyInStock);
+        var nameDomain = new List<object>(baseDomain)
+        {
+            new object[] { "name", "ilike", q }
+        };
+        var codeDomain = new List<object>(baseDomain)
+        {
+            "|",
+            new object[] { "default_code", "ilike", q },
+            new object[] { "barcode", "ilike", q }
+        };
+
+        var cleanNum = q.TrimStart('#')
+            .Replace("id:", "", StringComparison.OrdinalIgnoreCase)
+            .Replace("id", "", StringComparison.OrdinalIgnoreCase)
+            .Trim();
+        var hasParsedId = int.TryParse(cleanNum, out var parsedId);
+        List<object>? idDomain = hasParsedId
+            ? new List<object>(baseDomain) { new object[] { "id", "=", parsedId } }
+            : null;
+
+        var nameCountTask = CountProductsAsync(nameDomain, ct);
+        var codeCountTask = CountProductsAsync(codeDomain, ct);
+        var idCountTask = idDomain is not null ? CountProductsAsync(idDomain, ct) : Task.FromResult(0);
+
+        await Task.WhenAll(nameCountTask, codeCountTask, idCountTask);
+
+        var nameCount = nameCountTask.Result;
+        var codeCount = codeCountTask.Result;
+        var idCount = idCountTask.Result;
+        var idExists = idCount > 0;
+
+        if (nameCount == 0 && codeCount == 0 && !idExists)
+        {
+            return (Array.Empty<ProductDto>(), 0);
+        }
+
+        // Si solo una rama tiene coincidencias, leemos directamente esa rama paginada para aprovechar índices GIN/PK.
+        if (nameCount > 0 && codeCount == 0 && !idExists)
+        {
+            var items = await ReadProductsAsync(nameDomain, limit: pageSize, offset: offset, ct: ct);
+            return (items, nameCount);
+        }
+
+        if (codeCount > 0 && nameCount == 0 && !idExists)
+        {
+            var items = await ReadProductsAsync(codeDomain, limit: pageSize, offset: offset, ct: ct);
+            return (items, codeCount);
+        }
+
+        if (idExists && nameCount == 0 && codeCount == 0)
+        {
+            var items = await ReadProductsAsync(idDomain!, limit: pageSize, offset: offset, ct: ct);
+            return (items, idCount);
+        }
+
+        // Múltiples ramas con coincidencias: unión de IDs sin duplicados cuando la cardinalidad es acotada.
+        const int maxIndexedUnionCardinality = 5000;
+        if (nameCount <= maxIndexedUnionCardinality && codeCount <= maxIndexedUnionCardinality)
+        {
+            var idSearchTasks = new List<Task<IReadOnlyList<int>>>(3);
+            if (nameCount > 0) idSearchTasks.Add(SearchProductIdsAsync(nameDomain, ct));
+            if (codeCount > 0) idSearchTasks.Add(SearchProductIdsAsync(codeDomain, ct));
+            if (idExists && idDomain is not null) idSearchTasks.Add(SearchProductIdsAsync(idDomain, ct));
+
+            var idLists = await Task.WhenAll(idSearchTasks);
+            var distinctIds = idLists
+                .SelectMany(ids => ids)
+                .Distinct()
+                .OrderBy(id => id)
+                .ToList();
+
+            var totalCount = distinctIds.Count;
+            var pageIds = distinctIds.Skip(offset).Take(pageSize).ToArray();
+            if (pageIds.Length == 0)
+            {
+                return (Array.Empty<ProductDto>(), totalCount);
+            }
+
+            var pageDomain = new List<object>(baseDomain)
+            {
+                new object[] { "id", "in", pageIds }
+            };
+            var items = await ReadProductsAsync(pageDomain, limit: pageSize, offset: 0, ct: ct);
+            return (items.OrderBy(p => p.Id).ToList(), totalCount);
+        }
+
+        // Fallback para alta cardinalidad (> 5000 en alguna rama) para evitar traer cientos de miles de IDs.
+        var fallbackDomain = BuildProductDomain(q, "ALL", onlyInStock);
+        var fallbackCount = await CountProductsAsync(fallbackDomain, ct);
+        var fallbackItems = await ReadProductsAsync(fallbackDomain, limit: pageSize, offset: offset, ct: ct);
+        return (fallbackItems, fallbackCount);
+    }
+
+    private async Task<int> CountProductsAsync(List<object> domain, CancellationToken ct)
+    {
+        var countNode = await CallAsync("product.product", "search_count", new { domain }, ct);
+        return countNode is JsonValue v && v.TryGetValue<int>(out var c)
             ? c
             : (int.TryParse(countNode?.ToString(), out var parsedC) ? parsedC : 0);
+    }
 
-        var items = await ReadProductsAsync(domain, limit: pageSize, offset: offset, ct: cancellationToken);
-        return (items, totalCount);
+    private async Task<IReadOnlyList<int>> SearchProductIdsAsync(List<object> domain, CancellationToken ct)
+    {
+        var result = await CallAsync("product.product", "search", new { domain, order = "id asc" }, ct);
+        return ReadIdList(result).ToList();
     }
 
     private static List<object> BuildCustomerDomain(string query, string? criteria = null)
