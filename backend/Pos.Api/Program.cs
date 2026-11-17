@@ -72,12 +72,32 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
-// 4. Configuración de CORS
+// 4. Configuración de CORS (Localhost + orígenes LAN opcionales vía CORS__ALLOWEDORIGINS)
+var defaultCorsOrigins = new[]
+{
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+    "http://localhost:3000"
+};
+
+var extraCorsOriginsRaw = builder.Configuration["CORS__ALLOWEDORIGINS"]
+    ?? builder.Configuration["CORS_ALLOWEDORIGINS"]
+    ?? string.Empty;
+
+var allowedCorsOrigins = defaultCorsOrigins
+    .Concat(extraCorsOriginsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+    .Select(origin => origin.TrimEnd('/'))
+    .Where(origin => !string.IsNullOrWhiteSpace(origin))
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToArray();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowViteApp", policy =>
     {
-        policy.WithOrigins("http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000")
+        policy.WithOrigins(allowedCorsOrigins)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .WithExposedHeaders("Idempotency-Key", "X-Server-Instance", "X-Total-Count");
