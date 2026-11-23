@@ -1318,7 +1318,7 @@ public class OdooJson2PosAdapter : IOdooPosGateway
                     throw new OdooCommunicationException("El servidor Odoo no se encuentra disponible temporalmente. Intente más tarde.");
                 }
 
-                throw new OdooCommunicationException($"El servidor Odoo no pudo procesar la solicitud ({model}.{method}): {message}");
+                throw new OdooCommunicationException($"El servidor Odoo no pudo procesar la solicitud");
             }
 
             return string.IsNullOrWhiteSpace(raw) ? null : JsonNode.Parse(raw);
