@@ -87,6 +87,7 @@ public class SqliteSaleHistoryRepository : ISaleHistoryRepository
                 TotalAmount = sale.TotalAmount,
                 PaymentMethod = sale.PaymentMethod,
                 AmountPaid = sale.AmountPaid > 0 ? sale.AmountPaid : sale.TotalAmount,
+                ChangeAmount = sale.ChangeAmount,
                 State = sale.State,
                 OdooOrderReference = sale.OdooOrderReference,
                 OdooOrderId = sale.OdooOrderId,
@@ -102,6 +103,7 @@ public class SqliteSaleHistoryRepository : ISaleHistoryRepository
             existing.DiscountPolicyName = sale.DiscountPolicyName;
             existing.PaymentMethod = sale.PaymentMethod;
             existing.AmountPaid = sale.AmountPaid > 0 ? sale.AmountPaid : sale.TotalAmount;
+            existing.ChangeAmount = sale.ChangeAmount;
             existing.SessionName = string.IsNullOrWhiteSpace(existing.SessionName) ? sale.SessionName : existing.SessionName;
             existing.OperatorName = string.IsNullOrWhiteSpace(existing.OperatorName) ? sale.OperatorName : existing.OperatorName;
         }
@@ -485,6 +487,7 @@ public class SqliteSaleHistoryRepository : ISaleHistoryRepository
                 s.DiscountPolicyName,
                 s.PaymentMethod,
                 s.AmountPaid,
+                s.ChangeAmount,
                 s.SessionName,
                 s.OperatorName
             })
@@ -517,7 +520,8 @@ public class SqliteSaleHistoryRepository : ISaleHistoryRepository
                 PaymentMethod: string.IsNullOrWhiteSpace(record.PaymentMethod) ? "Efectivo" : record.PaymentMethod,
                 AmountPaid: record.AmountPaid > 0 ? record.AmountPaid : record.TotalAmount,
                 SessionName: string.IsNullOrWhiteSpace(record.SessionName) ? $"Sesión #{record.PosSessionId}" : record.SessionName,
-                OperatorName: string.IsNullOrWhiteSpace(record.OperatorName) ? "Cajero POS" : record.OperatorName
+                OperatorName: string.IsNullOrWhiteSpace(record.OperatorName) ? "Cajero POS" : record.OperatorName,
+                ChangeAmount: record.ChangeAmount
             ));
         }
 
@@ -900,7 +904,8 @@ public class SqliteSaleHistoryRepository : ISaleHistoryRepository
             PaymentMethod: string.IsNullOrWhiteSpace(record.PaymentMethod) ? "Efectivo" : record.PaymentMethod,
             AmountPaid: record.AmountPaid > 0 ? record.AmountPaid : record.TotalAmount,
             SessionName: string.IsNullOrWhiteSpace(record.SessionName) ? $"Sesión #{record.PosSessionId}" : record.SessionName,
-            OperatorName: string.IsNullOrWhiteSpace(record.OperatorName) ? "Cajero POS" : record.OperatorName
+            OperatorName: string.IsNullOrWhiteSpace(record.OperatorName) ? "Cajero POS" : record.OperatorName,
+            ChangeAmount: record.ChangeAmount
         );
     }
 }

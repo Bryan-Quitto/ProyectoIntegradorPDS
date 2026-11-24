@@ -52,7 +52,8 @@ public record CreateSaleCommand(
     int? PartnerId = null,
     int? UserId = null,
     string? OperatorName = null,
-    bool IsAdmin = false
+    bool IsAdmin = false,
+    decimal? AmountPaid = null
 );
 
 public record SaleOrderLineDto(
@@ -87,7 +88,8 @@ public record SaleOrderResponseDto(
     decimal AmountPaid = 0m,
     string SessionName = "",
     string OperatorName = "Cajero POS",
-    int? PartnerId = null
+    int? PartnerId = null,
+    decimal ChangeAmount = 0m
 );
 
 public record OdooSyncResultDto(

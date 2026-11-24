@@ -28,6 +28,7 @@ export interface CreateSaleRequest {
   items: { productId: number; quantity: number }[];
   // [GUÍA ESTEBAN - TURNO 3 - RF-10]: Método de pago dinámico
   paymentMethod?: string;
+  amountPaid?: number;
   partnerId?: number | null;
 }
 
@@ -58,6 +59,7 @@ export interface SaleOrderDetailDto {
   totalAmount: number;
   paymentMethod?: string;
   amountPaid?: number;
+  changeAmount?: number;
   state: string;
   odooOrderReference?: string;
   odooOrderId?: number;

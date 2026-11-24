@@ -281,6 +281,7 @@ export interface CheckoutInput {
   idempotencyKey?: string;
   // [GUÍA ESTEBAN - TURNO 3 - RF-10]: Método de pago dinámico
   paymentMethod?: string;
+  amountPaid?: number;
   partnerId?: number | null;
 }
 
@@ -298,7 +299,7 @@ export class CheckoutSaleUseCase {
   }
 
   public async execute(input: CheckoutInput): Promise<CheckoutResult> {
-    const { cart, posSessionId, customerDocument, customerName, idempotencyKey, paymentMethod, partnerId } = input;
+    const { cart, posSessionId, customerDocument, customerName, idempotencyKey, paymentMethod, amountPaid, partnerId } = input;
 
     // 1. RN-01: Rechazar venta sin productos
     if (cart.items.length === 0) {
@@ -306,6 +307,32 @@ export class CheckoutSaleUseCase {
         success: false,
         errorMessage: 'No se puede procesar el cobro: el carrito está vacío (RN-01).',
       };
+    }
+
+    // 1b. Validación de monto recibido en efectivo si fue suministrado
+    const normalizedMethod = (paymentMethod || 'Efectivo').trim();
+    if (amountPaid !== undefined) {
+      if (Number.isNaN(amountPaid) || amountPaid <= 0) {
+        return {
+          success: false,
+          errorMessage: 'El monto recibido debe ser mayor a $0.00.',
+        };
+      }
+      if (amountPaid > 10_000_000) {
+        return {
+          success: false,
+          errorMessage: 'El monto recibido no puede superar $10,000,000.00.',
+        };
+      }
+      if (
+        normalizedMethod.toLowerCase() === 'efectivo' &&
+        Math.round(amountPaid * 100) < Math.round(cart.total * 100)
+      ) {
+        return {
+          success: false,
+          errorMessage: `El monto recibido ($${amountPaid.toFixed(2)}) es menor al total a pagar ($${cart.total.toFixed(2)}).`,
+        };
+      }
     }
 
     // 2. Validación de Cédula/RUC si se proporciona
@@ -335,6 +362,7 @@ export class CheckoutSaleUseCase {
         quantity: i.quantity,
       })),
       paymentMethod: paymentMethod || 'Efectivo',
+      ...(amountPaid !== undefined ? { amountPaid: Math.round(amountPaid * 100) / 100 } : {}),
       partnerId: partnerId ?? null,
     };
 

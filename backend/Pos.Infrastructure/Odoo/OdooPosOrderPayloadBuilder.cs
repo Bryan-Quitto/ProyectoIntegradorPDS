@@ -14,6 +14,8 @@ public class OdooPosOrderPayloadBuilder
     private int _sessionId;
     private decimal _amountTax;
     private decimal _amountTotal;
+    private decimal _amountPaid;
+    private decimal _changeAmount;
     private DateTime _dateOrderUtc = DateTime.UtcNow;
     private int? _paymentMethodId;
     private int? _partnerId;
@@ -67,6 +69,14 @@ public class OdooPosOrderPayloadBuilder
         return this;
     }
 
+    public OdooPosOrderPayloadBuilder WithPayment(int paymentMethodId, decimal amountPaid, decimal changeAmount)
+    {
+        _paymentMethodId = paymentMethodId;
+        _amountPaid = amountPaid;
+        _changeAmount = changeAmount;
+        return this;
+    }
+
     /// <summary>Compatibilidad hacia atrás con pruebas existentes.</summary>
     public OdooPosOrderPayloadBuilder WithCashPayment(int paymentMethodId)
     {
@@ -108,6 +118,12 @@ public class OdooPosOrderPayloadBuilder
             .WithPartnerId(order.PartnerId)
             .WithUserId(order.UserId);
 
+        if (order.AmountPaid > 0m)
+        {
+            _amountPaid = order.AmountPaid;
+            _changeAmount = order.ChangeAmount;
+        }
+
         // Los montos fiscales los determina exclusivamente el Dominio.
         foreach (var line in order.Lines)
         {
@@ -136,6 +152,25 @@ public class OdooPosOrderPayloadBuilder
             throw new InvalidOperationException("El payload de Odoo requiere un método de pago resuelto.");
 
         var date = _dateOrderUtc.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+        var changeAmount = decimal.Round(Math.Max(0m, _changeAmount), 2, MidpointRounding.AwayFromZero);
+        var tenderedAmount = _amountPaid > 0m
+            ? decimal.Round(_amountPaid, 2, MidpointRounding.AwayFromZero)
+            : decimal.Round(_amountTotal + changeAmount, 2, MidpointRounding.AwayFromZero);
+
+        // En Odoo POS (pos_order.py _process_payment_lines), payment_ids solo lleva el cobro recibido
+        // y amount_return se envía NEGATIVO (-cambio); Odoo crea automáticamente la línea is_change=True.
+        var paymentLines = new List<object>
+        {
+            new object[]
+            {
+                0, 0, new Dictionary<string, object>
+                {
+                    ["amount"] = tenderedAmount,
+                    ["payment_method_id"] = _paymentMethodId.Value,
+                    ["payment_date"] = date
+                }
+            }
+        };
 
         var payload = new Dictionary<string, object>
         {
@@ -145,22 +180,11 @@ public class OdooPosOrderPayloadBuilder
             ["date_order"] = date,
             ["amount_tax"] = _amountTax,
             ["amount_total"] = _amountTotal,
-            ["amount_paid"] = _amountTotal,
-            ["amount_return"] = 0m,
+            ["amount_paid"] = tenderedAmount,
+            ["amount_return"] = changeAmount > 0m ? -changeAmount : 0m,
             ["to_invoice"] = false,
             ["lines"] = _lines.Select(l => new object[] { 0, 0, l }).ToList(),
-            ["payment_ids"] = new List<object>
-            {
-                new object[]
-                {
-                    0, 0, new Dictionary<string, object>
-                    {
-                        ["amount"] = _amountTotal,
-                        ["payment_method_id"] = _paymentMethodId.Value,
-                        ["payment_date"] = date
-                    }
-                }
-            }
+            ["payment_ids"] = paymentLines
         };
 
         if (_partnerId.HasValue && _partnerId.Value > 0)

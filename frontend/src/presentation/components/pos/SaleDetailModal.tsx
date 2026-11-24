@@ -279,14 +279,20 @@ export const SaleDetailModal: React.FC<SaleDetailModalProps> = ({
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
-                    <span className="text-slate-500">Monto Cobrado:</span>
+                    <span className="text-slate-500">Monto Recibido / Cobrado:</span>
                     <span className="font-bold text-slate-900 font-mono">
-                      {formatCurrency(sale.amountPaid || sale.totalAmount)}
+                      {formatCurrency(sale.amountPaid && sale.amountPaid > 0 ? sale.amountPaid : sale.totalAmount)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-1">
                     <span className="text-slate-500">Cambio / Vuelto:</span>
-                    <span className="font-mono text-slate-600">$0.00</span>
+                    <span className={`font-mono font-semibold ${(sale.changeAmount ?? 0) > 0 ? 'text-emerald-700' : 'text-slate-600'}`}>
+                      {formatCurrency(
+                        sale.changeAmount !== undefined && sale.changeAmount !== null
+                          ? sale.changeAmount
+                          : Math.max(0, (sale.amountPaid && sale.amountPaid > 0 ? sale.amountPaid : sale.totalAmount) - sale.totalAmount)
+                      )}
+                    </span>
                   </div>
                 </div>
               </div>

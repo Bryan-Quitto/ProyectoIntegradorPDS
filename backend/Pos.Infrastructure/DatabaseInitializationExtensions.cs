@@ -88,6 +88,7 @@ public static class DatabaseInitializationExtensions
         AddColumnIfMissing("DiscountPolicyName", "TEXT DEFAULT 'Sin Descuento'");
         AddColumnIfMissing("PaymentMethod", "TEXT DEFAULT 'Efectivo'");
         AddColumnIfMissing("AmountPaid", "TEXT DEFAULT '0.0'");
+        AddColumnIfMissing("ChangeAmount", "TEXT DEFAULT '0.0'");
     }
 
     private static void EnsureBTreeIndexes(DbConnection connection)

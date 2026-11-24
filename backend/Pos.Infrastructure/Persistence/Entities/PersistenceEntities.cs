@@ -25,6 +25,7 @@ public class SaleAuditRecord
     public decimal TotalAmount { get; set; }
     public string PaymentMethod { get; set; } = "Efectivo";
     public decimal AmountPaid { get; set; }
+    public decimal ChangeAmount { get; set; }
     public string State { get; set; } = string.Empty;
     public string? OdooOrderReference { get; set; }
     public int? OdooOrderId { get; set; }

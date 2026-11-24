@@ -391,7 +391,8 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
     customerDoc: string,
     customerName: string,
     paymentMethod: string,
-    partnerId?: number | null
+    partnerId?: number | null,
+    amountPaid?: number
   ) => {
     const effectiveSessionId = user?.posSessionId && user.posSessionId > 0
       ? user.posSessionId
@@ -413,7 +414,8 @@ export const PosTerminalPage: React.FC<PosTerminalPageProps> = ({ onNavigateHist
       customerDoc,
       customerName,
       paymentMethod,
-      effectivePartnerId
+      effectivePartnerId,
+      amountPaid
     );
 
     if (!result.success && result.errorMessage) {

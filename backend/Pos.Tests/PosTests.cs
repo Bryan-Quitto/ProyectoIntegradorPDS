@@ -2056,6 +2056,211 @@ public class PosTests
         capturedBodies.Should().NotContain(b => b.Contains("beba", StringComparison.OrdinalIgnoreCase));
     }
 
+    // =========================================================================
+    // P39: Efectivo recibido, cálculo de vuelto, validación y payload Odoo 20
+    // =========================================================================
+    [Fact]
+    public async Task P39_A_EfectivoConMontoMayorAlTotal_CalculaCambioYConstruyePayloadOdooConVuelto()
+    {
+        // Arrange
+        var odooGateway = Substitute.For<IOdooPosGateway>();
+        var idempotencyStore = Substitute.For<IIdempotencyStore>();
+        var historyRepo = Substitute.For<ISaleHistoryRepository>();
+
+        const int sessionId = 4;
+        odooGateway.GetActiveSessionAsync(sessionId, Arg.Any<CancellationToken>())
+            .Returns(new PosSessionDto(sessionId, "Caja Principal", "opened", 2, IsOpen: true));
+
+        odooGateway.GetProductsByIdsAsync(Arg.Any<IReadOnlyCollection<int>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ProductDto>
+            {
+                new(3, "Producto A", 15.00m, "", 100m, "PROD-001", TaxRate: 0.15m, PriceIncludesTax: true, TaxIds: new[] { 1 }),
+                new(4, "Producto B", 20.00m, "", 100m, "PROD-002", TaxRate: 0.15m, PriceIncludesTax: true, TaxIds: new[] { 1 })
+            });
+
+        odooGateway.ResolvePaymentMethodIdAsync(sessionId, "cash", Arg.Any<CancellationToken>())
+            .Returns(1);
+
+        SaleOrder? capturedOrder = null;
+        odooGateway.SyncSaleOrderAsync(Arg.Any<SaleOrder>(), 1, Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                capturedOrder = ci.Arg<SaleOrder>();
+                return new OdooSyncResultDto(true, "260-1-000099", 99, null);
+            });
+
+        var useCase = new CreateSaleUseCase(
+            odooGateway,
+            idempotencyStore,
+            historyRepo,
+            new IPaymentProcessor[] { new CashPaymentProcessor(odooGateway) });
+
+        var command = new CreateSaleCommand(
+            IdempotencyKey: Guid.NewGuid().ToString(),
+            PosSessionId: sessionId,
+            CustomerDocument: "1712345678",
+            CustomerName: "Juan Perez",
+            DiscountType: "NONE",
+            DiscountValue: 0m,
+            Items: new List<CreateSaleItemDto> { new(3, 1), new(4, 1) },
+            PaymentMethod: "Efectivo",
+            AmountPaid: 50.00m
+        );
+
+        // Act
+        var result = await useCase.ExecuteAsync(command);
+
+        // Assert
+        result.TotalAmount.Should().Be(35.00m);
+        result.AmountPaid.Should().Be(50.00m);
+        result.ChangeAmount.Should().Be(15.00m);
+        capturedOrder.Should().NotBeNull();
+        capturedOrder!.AmountPaid.Should().Be(50.00m);
+        capturedOrder.ChangeAmount.Should().Be(15.00m);
+
+        var payload = new Pos.Infrastructure.Odoo.OdooPosOrderPayloadBuilder()
+            .FromSaleOrder(capturedOrder)
+            .WithPayment(1)
+            .Build();
+
+        payload["amount_total"].Should().Be(35.00m);
+        payload["amount_paid"].Should().Be(50.00m);
+        payload["amount_return"].Should().Be(-15.00m);
+
+        var paymentIds = payload["payment_ids"].Should().BeAssignableTo<List<object>>().Subject;
+        paymentIds.Should().HaveCount(1);
+
+        var cashIn = ((object[])paymentIds[0])[2].Should().BeAssignableTo<Dictionary<string, object>>().Subject;
+        cashIn["amount"].Should().Be(50.00m);
+        cashIn["payment_method_id"].Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-10)]
+    [InlineData(10000000.01)]
+    public async Task P39_B_EfectivoFueraDeRango_LanzaDomainValidationException(double invalidAmount)
+    {
+        var odooGateway = Substitute.For<IOdooPosGateway>();
+        var idempotencyStore = Substitute.For<IIdempotencyStore>();
+        var historyRepo = Substitute.For<ISaleHistoryRepository>();
+
+        odooGateway.GetActiveSessionAsync(1, Arg.Any<CancellationToken>())
+            .Returns(new PosSessionDto(1, "Caja 1", "opened", 2, IsOpen: true));
+        odooGateway.GetProductsByIdsAsync(Arg.Any<IReadOnlyCollection<int>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ProductDto> { new(3, "Producto A", 15.00m, "", 100m, "PROD-001", 0.15m, true, new[] { 1 }) });
+
+        var useCase = new CreateSaleUseCase(
+            odooGateway,
+            idempotencyStore,
+            historyRepo,
+            new IPaymentProcessor[] { new CashPaymentProcessor(odooGateway) });
+
+        var command = new CreateSaleCommand(
+            IdempotencyKey: Guid.NewGuid().ToString(),
+            PosSessionId: 1,
+            CustomerDocument: "9999999999999",
+            CustomerName: "Consumidor Final",
+            DiscountType: "NONE",
+            DiscountValue: 0m,
+            Items: new List<CreateSaleItemDto> { new(3, 1) },
+            PaymentMethod: "Efectivo",
+            AmountPaid: (decimal)invalidAmount
+        );
+
+        var act = () => useCase.ExecuteAsync(command);
+        await act.Should().ThrowAsync<DomainValidationException>();
+        await odooGateway.DidNotReceive().SyncSaleOrderAsync(Arg.Any<SaleOrder>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task P39_C_EfectivoInsuficiente_LanzaApplicationValidationExceptionSinSincronizarOdoo()
+    {
+        var odooGateway = Substitute.For<IOdooPosGateway>();
+        var idempotencyStore = Substitute.For<IIdempotencyStore>();
+        var historyRepo = Substitute.For<ISaleHistoryRepository>();
+
+        odooGateway.GetActiveSessionAsync(1, Arg.Any<CancellationToken>())
+            .Returns(new PosSessionDto(1, "Caja 1", "opened", 2, IsOpen: true));
+        odooGateway.GetProductsByIdsAsync(Arg.Any<IReadOnlyCollection<int>>(), Arg.Any<CancellationToken>())
+            .Returns(new List<ProductDto> { new(3, "Producto A", 35.00m, "", 100m, "PROD-001", 0.15m, true, new[] { 1 }) });
+
+        var useCase = new CreateSaleUseCase(
+            odooGateway,
+            idempotencyStore,
+            historyRepo,
+            new IPaymentProcessor[] { new CashPaymentProcessor(odooGateway) });
+
+        var command = new CreateSaleCommand(
+            IdempotencyKey: Guid.NewGuid().ToString(),
+            PosSessionId: 1,
+            CustomerDocument: "9999999999999",
+            CustomerName: "Consumidor Final",
+            DiscountType: "NONE",
+            DiscountValue: 0m,
+            Items: new List<CreateSaleItemDto> { new(3, 1) },
+            PaymentMethod: "Efectivo",
+            AmountPaid: 20.00m
+        );
+
+        var act = () => useCase.ExecuteAsync(command);
+        await act.Should().ThrowAsync<ApplicationValidationException>()
+            .WithMessage("*menor al total a pagar*");
+
+        await odooGateway.DidNotReceive().SyncSaleOrderAsync(Arg.Any<SaleOrder>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+        await historyRepo.DidNotReceive().SaveSaleAsync(Arg.Any<SaleOrderResponseDto>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task P39_D_SqliteSaleHistoryRepository_PersisteYRecuperaAmountPaidYChangeAmount()
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var options = new DbContextOptionsBuilder<Pos.Infrastructure.Persistence.PosDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        using var dbContext = new Pos.Infrastructure.Persistence.PosDbContext(options);
+        dbContext.EnsurePosSchemaAndFtsInitialized();
+
+        var repo = new Pos.Infrastructure.Persistence.SqliteSaleHistoryRepository(dbContext);
+        var orderId = Guid.NewGuid();
+        var sale = new SaleOrderResponseDto(
+            OrderId: orderId,
+            PosSessionId: 4,
+            CustomerDocument: "1712345678",
+            CustomerName: "Cliente Cambio",
+            SubTotal: 35.00m,
+            DiscountAmount: 0m,
+            TaxAmount: 4.57m,
+            TotalAmount: 35.00m,
+            State: "Synced",
+            OdooOrderReference: "260-1-000120",
+            OdooOrderId: 120,
+            CreatedAtUtc: DateTime.UtcNow,
+            Lines: new List<SaleOrderLineDto>
+            {
+                new(3, "Producto A", 1, 35.00m, 35.00m, "PROD-001", 0.15m, 30.43m, 4.57m, 35.00m)
+            },
+            PaymentMethod: "Efectivo",
+            AmountPaid: 50.00m,
+            ChangeAmount: 15.00m
+        );
+
+        await repo.SaveSaleAsync(sale);
+
+        var (pagedItems, totalCount) = await repo.GetSalesPagedAsync(4, page: 1, pageSize: 10);
+        totalCount.Should().Be(1);
+        pagedItems[0].AmountPaid.Should().Be(50.00m);
+        pagedItems[0].ChangeAmount.Should().Be(15.00m);
+
+        var detail = await repo.GetSaleByIdAsync(orderId);
+        detail.Should().NotBeNull();
+        detail!.AmountPaid.Should().Be(50.00m);
+        detail.ChangeAmount.Should().Be(15.00m);
+    }
+
     private static Pos.Infrastructure.Odoo.OdooJson2PosAdapter CreateOdooAdapter(HttpMessageHandler handler)
     {
         var httpClient = new HttpClient(handler);

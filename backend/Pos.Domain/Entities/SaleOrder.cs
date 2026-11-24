@@ -19,6 +19,8 @@ public readonly record struct LineFiscalBreakdown(
 
 public class SaleOrder
 {
+    public const decimal MaxTenderedAmount = 10_000_000m;
+
     private readonly List<SaleOrderLine> _lines = new();
 
     public Guid Id { get; }
@@ -30,6 +32,10 @@ public class SaleOrder
     public IDiscountPolicy DiscountPolicy { get; private set; }
     public ISaleOrderState State { get; private set; }
     public DateTime CreatedAtUtc { get; }
+
+    public decimal? TenderedAmount { get; private set; }
+    public decimal AmountPaid { get; private set; }
+    public decimal ChangeAmount { get; private set; }
 
     public string? OdooOrderReference { get; private set; }
     public int? OdooOrderId { get; private set; }
@@ -148,6 +154,50 @@ public class SaleOrder
     {
         EnsureCanModify();
         DiscountPolicy = discountPolicy ?? new NoDiscountPolicy();
+    }
+
+    public void SetTenderedAmount(decimal? amount)
+    {
+        EnsureCanModify();
+
+        if (!amount.HasValue)
+        {
+            TenderedAmount = null;
+            return;
+        }
+
+        if (amount.Value <= 0m)
+        {
+            throw new DomainValidationException(nameof(TenderedAmount), "El monto entregado por el cliente debe ser mayor a 0.");
+        }
+
+        if (amount.Value > MaxTenderedAmount)
+        {
+            throw new DomainValidationException(nameof(TenderedAmount), $"El monto entregado no puede superar {MaxTenderedAmount:N2}.");
+        }
+
+        TenderedAmount = decimal.Round(amount.Value, 2, MidpointRounding.AwayFromZero);
+    }
+
+    public void RecordPayment(decimal amountPaid, decimal changeAmount)
+    {
+        var roundedPaid = decimal.Round(amountPaid, 2, MidpointRounding.AwayFromZero);
+        var roundedChange = decimal.Round(changeAmount, 2, MidpointRounding.AwayFromZero);
+
+        if (roundedPaid < TotalAmount)
+        {
+            throw new DomainValidationException(
+                nameof(AmountPaid),
+                $"El monto pagado ({roundedPaid:F2}) no puede ser menor al total de la orden ({TotalAmount:F2}).");
+        }
+
+        if (roundedChange < 0m)
+        {
+            throw new DomainValidationException(nameof(ChangeAmount), "El cambio devuelto no puede ser negativo.");
+        }
+
+        AmountPaid = roundedPaid;
+        ChangeAmount = roundedChange;
     }
 
     public void Confirm()

@@ -1269,4 +1269,87 @@ describe('Frontend Clean Architecture - Suite de Pruebas Unitarias', () => {
       global.fetch = originalFetch;
     }
   });
+
+  // =========================================================================
+  // P48: CheckoutSaleUseCase valida y propaga monto recibido en efectivo y cambio devuelto
+  // =========================================================================
+  it('P48: CheckoutSaleUseCase valida monto recibido en Efectivo (>0, <=10M, >=total) y propaga amountPaid', async () => {
+    const mockGateway: IPosApiGateway = {
+      getProducts: vi.fn(),
+      getProductsByIds: vi.fn(),
+      getCustomers: vi.fn(),
+      getActiveSession: vi.fn(),
+      createSale: vi.fn().mockResolvedValue({
+        orderId: 'sale-cash-change-1',
+        posSessionId: 4,
+        customerDocument: '9999999999999',
+        customerName: 'Consumidor Final',
+        subTotal: 35.0,
+        discountAmount: 0,
+        taxAmount: 4.57,
+        totalAmount: 35.0,
+        paymentMethod: 'Efectivo',
+        amountPaid: 50.0,
+        changeAmount: 15.0,
+        state: 'Synced',
+        odooOrderReference: '260-1-000100',
+        odooOrderId: 100,
+        createdAtUtc: new Date().toISOString(),
+        lines: [],
+      }),
+      getSalesHistory: vi.fn(),
+      getSaleById: vi.fn(),
+    };
+
+    const cart = new Cart();
+    cart.addItem({ id: 3, name: 'Prod A', price: 30.4348, barcode: '001', availableQuantity: 5 }, 1);
+    const useCase = new CheckoutSaleUseCase(mockGateway);
+
+    // 1. Rechaza <= 0
+    const resZero = await useCase.execute({
+      cart,
+      posSessionId: 4,
+      paymentMethod: 'Efectivo',
+      amountPaid: 0,
+    });
+    expect(resZero.success).toBe(false);
+    expect(resZero.errorMessage).toContain('mayor a $0.00');
+
+    // 2. Rechaza > 10,000,000
+    const resTooBig = await useCase.execute({
+      cart,
+      posSessionId: 4,
+      paymentMethod: 'Efectivo',
+      amountPaid: 10_000_001,
+    });
+    expect(resTooBig.success).toBe(false);
+    expect(resTooBig.errorMessage).toContain('10,000,000.00');
+
+    // 3. Rechaza monto menor al total
+    const resInsufficient = await useCase.execute({
+      cart,
+      posSessionId: 4,
+      paymentMethod: 'Efectivo',
+      amountPaid: 10,
+    });
+    expect(resInsufficient.success).toBe(false);
+    expect(resInsufficient.errorMessage).toContain('menor al total');
+
+    // 4. Monto válido >= total propaga amountPaid y retorna changeAmount
+    const resOk = await useCase.execute({
+      cart,
+      posSessionId: 4,
+      paymentMethod: 'Efectivo',
+      amountPaid: 50,
+    });
+    expect(resOk.success).toBe(true);
+    expect(resOk.order?.amountPaid).toBe(50.0);
+    expect(resOk.order?.changeAmount).toBe(15.0);
+    expect(mockGateway.createSale).toHaveBeenCalledWith(
+      expect.objectContaining({
+        paymentMethod: 'Efectivo',
+        amountPaid: 50,
+      })
+    );
+  });
 });

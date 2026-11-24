@@ -32,14 +32,50 @@ public class CashPaymentProcessor : IPaymentProcessor
         int posSessionId,
         CancellationToken cancellationToken = default)
     {
+        var amountPaid = saleOrder.TenderedAmount.HasValue
+            ? decimal.Round(saleOrder.TenderedAmount.Value, 2, MidpointRounding.AwayFromZero)
+            : saleOrder.TotalAmount;
+
+        if (amountPaid <= 0m)
+        {
+            return new PaymentProcessingResult(
+                Success: false,
+                MethodName: "Efectivo",
+                AmountPaid: amountPaid,
+                ResolvedOdooMethodId: 0,
+                ErrorMessage: "El monto recibido en efectivo debe ser mayor a $0.00.");
+        }
+
+        if (amountPaid > SaleOrder.MaxTenderedAmount)
+        {
+            return new PaymentProcessingResult(
+                Success: false,
+                MethodName: "Efectivo",
+                AmountPaid: amountPaid,
+                ResolvedOdooMethodId: 0,
+                ErrorMessage: $"El monto recibido en efectivo no puede superar ${SaleOrder.MaxTenderedAmount:N2}.");
+        }
+
+        if (amountPaid < saleOrder.TotalAmount)
+        {
+            return new PaymentProcessingResult(
+                Success: false,
+                MethodName: "Efectivo",
+                AmountPaid: amountPaid,
+                ResolvedOdooMethodId: 0,
+                ErrorMessage: $"El monto recibido (${amountPaid:F2}) es menor al total a pagar (${saleOrder.TotalAmount:F2}).");
+        }
+
+        var changeAmount = decimal.Round(amountPaid - saleOrder.TotalAmount, 2, MidpointRounding.AwayFromZero);
         var methodId = await _odooGateway.ResolvePaymentMethodIdAsync(posSessionId, "cash", cancellationToken);
 
         return new PaymentProcessingResult(
             Success: true,
             MethodName: "Efectivo",
-            AmountPaid: saleOrder.TotalAmount,
+            AmountPaid: amountPaid,
             ResolvedOdooMethodId: methodId,
-            TransactionReference: $"CASH-SESSION-{posSessionId}"
+            TransactionReference: $"CASH-SESSION-{posSessionId}",
+            ChangeAmount: changeAmount
         );
     }
 }

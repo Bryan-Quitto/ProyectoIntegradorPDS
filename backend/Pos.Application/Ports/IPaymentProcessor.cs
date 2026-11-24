@@ -11,7 +11,8 @@ public record PaymentProcessingResult(
     decimal AmountPaid,
     int ResolvedOdooMethodId,
     string? TransactionReference = null,
-    string? ErrorMessage = null
+    string? ErrorMessage = null,
+    decimal ChangeAmount = 0m
 );
 
 /// <summary>

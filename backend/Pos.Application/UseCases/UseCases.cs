@@ -215,6 +215,11 @@ public class CreateSaleUseCase
             order.AddLine(product, new Quantity(item.Quantity));
         }
 
+        if (command.AmountPaid.HasValue)
+        {
+            order.SetTenderedAmount(command.AmountPaid);
+        }
+
         // 6. Confirmación de la orden (transición de estado y congelación RN-06)
         order.Confirm();
 
@@ -230,6 +235,8 @@ public class CreateSaleUseCase
         {
             throw new ApplicationValidationException(nameof(command.PaymentMethod), paymentResult.ErrorMessage ?? "Error procesando el método de pago.");
         }
+
+        order.RecordPayment(paymentResult.AmountPaid, paymentResult.ChangeAmount);
 
         // 8. Sincronización hacia Odoo 20 JSON-2 asociando el método resuelto
         var syncResult = paymentResult.ResolvedOdooMethodId > 0
@@ -279,7 +286,8 @@ public class CreateSaleUseCase
             AmountPaid: paymentResult.AmountPaid,
             SessionName: activeSession?.Name ?? $"Sesión #{order.PosSessionId}",
             OperatorName: effectiveOperatorName,
-            PartnerId: order.PartnerId
+            PartnerId: order.PartnerId,
+            ChangeAmount: paymentResult.ChangeAmount
         );
 
         // 10. Persistencia local para trazabilidad e idempotencia

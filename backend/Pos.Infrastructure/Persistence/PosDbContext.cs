@@ -31,6 +31,7 @@ public class PosDbContext : DbContext
             entity.HasIndex(e => e.SyncedAtUtc).IsDescending();
             entity.HasIndex(e => new { e.PosSessionId, e.SyncedAtUtc }).IsDescending(false, true);
             entity.HasIndex(e => e.CustomerDocument);
+            entity.Property(e => e.ChangeAmount).HasDefaultValue(0m);
         });
 
         modelBuilder.Entity<LocalOperator>(entity =>
